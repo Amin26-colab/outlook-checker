@@ -1,4 +1,5 @@
 fastapi
 uvicorn
-playwright
 jinja2
+playwright
+python-multipart
