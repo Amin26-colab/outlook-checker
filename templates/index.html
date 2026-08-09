@@ -5,196 +5,196 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Outlook Fast Inbox</title>
     <style>
-        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: #0b1120; color: #f1f5f9; margin: 0; padding: 20px 15px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .main-card { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 680px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h2 { color: #38bdf8; text-align: center; margin-top: 0; margin-bottom: 20px; font-weight: 600; font-size: 22px; }
-        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { width: 100%; max-width: 800px; background: #161b22; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); border: 1px solid #30363d; }
+        h2 { text-align: center; color: #58a6ff; margin-bottom: 25px; }
         .form-group { margin-bottom: 15px; }
-        label { font-size: 13px; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #283654; border-radius: 8px; font-size: 14px; color: #ffffff; outline: none; transition: 0.2s; }
-        input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
-        button { width: 100%; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-top: 5px; }
-        button:hover { background: #0369a1; }
-        button:disabled { background: #334155; cursor: not-allowed; opacity: 0.7; }
+        label { display: block; margin-bottom: 6px; color: #8b949e; font-size: 14px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #fff; font-size: 15px; outline: none; }
+        input:focus { border-color: #58a6ff; }
+        button { width: 100%; padding: 12px; background-color: #238636; color: #fff; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        button:hover { background-color: #2ea043; }
+        button:disabled { background-color: #484f58; cursor: not-allowed; }
+        .otp-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 25px; }
+        .otp-box { background: #21262d; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #30363d; }
+        .otp-box h4 { color: #8b949e; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; }
+        .otp-code { font-size: 20px; font-weight: bold; color: #58a6ff; margin-bottom: 8px; word-break: break-all; }
+        .otp-link-btn { display: inline-block; font-size: 12px; color: #fff; background: #1f6beb; text-decoration: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; margin-top: 5px; word-break: break-all; }
+        .otp-link-btn:hover { background: #388bfd; }
+        .email-list { margin-top: 25px; }
+        .email-item { background: #21262d; padding: 12px 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #58a6ff; cursor: pointer; transition: 0.2s; }
+        .email-item:hover { background: #30363d; }
+        .email-header { display: flex; justify-content: space-between; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
+        .email-sender { font-weight: bold; color: #f0f6fc; }
+        .email-subject { font-size: 14px; font-weight: 600; color: #c9d1d9; margin-bottom: 4px; }
+        .email-preview { font-size: 13px; color: #8b949e; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .error-msg { background: rgba(248, 81, 73, 0.15); color: #f85149; padding: 12px; border-radius: 6px; border: 1px solid #f85149; margin-top: 20px; text-align: center; display: none; }
+        .loader { display: none; text-align: center; margin-top: 15px; color: #58a6ff; }
         
-        /* OTP Dashboard Section */
-        .otp-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
-        .otp-card { background: #0f172a; border: 1px solid #23304d; border-radius: 8px; padding: 12px; text-align: center; position: relative; }
-        .otp-card .title { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; }
-        .otp-card .code-box { font-size: 18px; font-weight: bold; color: #38bdf8; background: #1e293b; padding: 6px; border-radius: 6px; cursor: pointer; letter-spacing: 1px; user-select: all; }
-        .otp-card .code-box:hover { background: #334155; }
-        .otp-card .link-btn { display: block; margin-top: 8px; font-size: 11px; color: #38bdf8; text-decoration: none; word-break: break-all; background: rgba(56, 189, 248, 0.1); padding: 4px; border-radius: 4px; border: 1px dashed #0284c7; cursor: pointer; }
-
-        /* Error Box */
-        .error-message { color: #f87171; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center; font-size: 13px; display: none; }
-
-        /* Inbox List Container */
-        .inbox-wrapper { margin-top: 25px; display: none; }
-        .inbox-header { font-size: 15px; font-weight: 600; color: #e2e8f0; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-        .inbox-list { max-height: 400px; overflow-y: auto; padding-right: 5px; }
-        .inbox-list::-webkit-scrollbar { width: 6px; }
-        .inbox-list::-webkit-scrollbar-track { background: #0f172a; }
-        .inbox-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-
-        .email-card { background: #131c31; border: 1px solid #212e4a; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; cursor: pointer; transition: 0.15s; }
-        .email-card:hover { border-color: #38bdf8; }
-        .email-subject { font-size: 14px; font-weight: 600; color: #f8fafc; margin-bottom: 3px; }
-        .email-sender { font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
-        .email-preview { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        /* Modal Popup for Full Email */
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
-        .modal-content { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 600px; padding: 20px; max-height: 85vh; overflow-y: auto; position: relative; }
-        .modal-close { position: absolute; top: 12px; right: 15px; font-size: 22px; color: #94a3b8; cursor: pointer; }
-        .modal-subject { font-size: 16px; font-weight: bold; color: #f8fafc; margin-bottom: 8px; padding-right: 25px; }
-        .modal-sender { font-size: 12px; color: #38bdf8; margin-bottom: 15px; border-bottom: 1px solid #23304d; padding-bottom: 10px; }
-        .modal-body { font-size: 13px; color: #cbd5e1; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        /* Modal Styles */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-body-content { background: #161b22; width: 90%; max-width: 650px; max-height: 80vh; border-radius: 10px; padding: 20px; border: 1px solid #30363d; overflow-y: auto; color: #c9d1d9; position: relative; }
+        .close-btn { position: absolute; top: 15px; right: 20px; font-size: 20px; cursor: pointer; color: #8b949e; }
+        .close-btn:hover { color: #fff; }
     </style>
 </head>
 <body>
 
-<div class="main-card">
-    <h2>Outlook Fast Inbox</h2>
+<div class="container">
+    <h2>Outlook Fast Inbox Check</h2>
     
-    <form id="checkerForm">
+    <form id="fetchForm">
         <div class="form-group">
             <label>Email Address</label>
-            <input type="text" id="email" name="email" placeholder="example@outlook.com" required>
+            <input type="text" id="email" required placeholder="example@outlook.com">
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input type="password" id="password" name="password" placeholder="••••••••" required>
+            <input type="password" id="password" required placeholder="••••••••">
         </div>
         <button type="submit" id="submitBtn">Fetch Inbox & Extract OTP</button>
     </form>
 
-    <!-- OTP Section -->
-    <div class="otp-container">
-        <div class="otp-card">
-            <div class="title">LinkedIn</div>
-            <div class="code-box" id="linkedinOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="linkedinLink" onclick="copyText(this)">No Link</div>
+    <div class="loader" id="loader">ওয়েট করুন, ইনবক্স লোড হচ্ছে...</div>
+    <div class="error-msg" id="errorBox"></div>
+
+    <div class="otp-container" id="otpBoxContainer" style="display: none;">
+        <div class="otp-box">
+            <h4>LINKEDIN</h4>
+            <div class="otp-code" id="linkedinCode">None</div>
+            <div id="linkedinLink"></div>
         </div>
-        <div class="otp-card">
-            <div class="title">Facebook</div>
-            <div class="code-box" id="facebookOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="facebookLink" onclick="copyText(this)">No Link</div>
+        <div class="otp-box">
+            <h4>FACEBOOK</h4>
+            <div class="otp-code" id="facebookCode">None</div>
+            <div id="facebookLink"></div>
         </div>
-        <div class="otp-card">
-            <div class="title">Instagram</div>
-            <div class="code-box" id="instagramOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="instagramLink" onclick="copyText(this)">No Link</div>
+        <div class="otp-box">
+            <h4>INSTAGRAM</h4>
+            <div class="otp-code" id="instagramCode">None</div>
+            <div id="instagramLink"></div>
         </div>
     </div>
 
-    <div id="errorMessage" class="error-message"></div>
-
-    <!-- Inbox List -->
-    <div id="inboxWrapper" class="inbox-wrapper">
-        <div class="inbox-header">
-            <span>Inbox Messages</span>
-            <span id="mailCount" style="font-size: 12px; color: #94a3b8;"></span>
-        </div>
-        <div id="inboxList" class="inbox-list"></div>
-    </div>
+    <div class="email-list" id="emailList"></div>
 </div>
 
-<!-- Email View Modal -->
-<div id="mailModal" class="modal-overlay">
-    <div class="modal-content">
-        <span class="modal-close" id="modalClose">&times;</span>
-        <div class="modal-subject" id="mSubject"></div>
-        <div class="modal-sender" id="mSender"></div>
-        <div class="modal-body" id="mBody"></div>
+<!-- Email Full Content Modal -->
+<div class="modal-overlay" id="emailModal">
+    <div class="modal-body-content">
+        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <h3 id="modalSubject" style="color: #58a6ff; margin-bottom: 10px;"></h3>
+        <p id="modalSender" style="font-size: 13px; color: #8b949e; margin-bottom: 15px;"></p>
+        <hr style="border-color: #30363d; margin-bottom: 15px;">
+        <div id="modalBody" style="white-space: pre-wrap; font-size: 14px; line-height: 1.6;"></div>
     </div>
 </div>
 
 <script>
-    function escapeHtml(text) {
+function escapeHtml(text) {
     if (!text) return '';
-    return text
+    return String(text)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
-    document.getElementById("checkerForm").addEventListener("submit", async function(e) {
-        e.preventDefault();
-        
-        const submitBtn = document.getElementById("submitBtn");
-        const errorMessage = document.getElementById("errorMessage");
-        const inboxWrapper = document.getElementById("inboxWrapper");
-        const inboxList = document.getElementById("inboxList");
 
-        submitBtn.disabled = true;
-        submitBtn.innerText = "Processing...";
-        errorMessage.style.display = "none";
-        inboxWrapper.style.display = "none";
-        inboxList.innerHTML = "";
+let loadedEmails = [];
 
-        const formData = new FormData(e.target);
+document.getElementById('fetchForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const submitBtn = document.getElementById('submitBtn');
+    const loader = document.getElementById('loader');
+    const errorBox = document.getElementById('errorBox');
+    const emailList = document.getElementById('emailList');
+    const otpBoxContainer = document.getElementById('otpBoxContainer');
 
-        try {
-            const response = await fetch("/fetch-inbox", { method: "POST", body: formData });
-            const data = await response.json();
+    errorBox.style.display = 'none';
+    emailList.innerHTML = '';
+    otpBoxContainer.style.display = 'none';
+    submitBtn.disabled = true;
+    loader.style.display = 'block';
 
-            if (data.success) {
-                // Update OTPs
-                document.getElementById("linkedinOtp").innerText = data.otps.linkedin.code || "None";
-                document.getElementById("linkedinLink").innerText = data.otps.linkedin.link ? "Copy Link" : "No Link";
-                document.getElementById("linkedinLink").setAttribute("data-link", data.otps.linkedin.link || "");
+    const formData = new FormData();
+    formData.append('email', email);
+    formData.append('password', password);
 
-                document.getElementById("facebookOtp").innerText = data.otps.facebook.code || "None";
-                document.getElementById("facebookLink").innerText = data.otps.facebook.link ? "Copy Link" : "No Link";
-                document.getElementById("facebookLink").setAttribute("data-link", data.otps.facebook.link || "");
+    try {
+        const response = await fetch('/fetch-inbox', {
+            method: 'POST',
+            body: formData
+        });
 
-                document.getElementById("instagramOtp").innerText = data.otps.instagram.code || "None";
-                document.getElementById("instagramLink").innerText = data.otps.instagram.link ? "Copy Link" : "No Link";
-                document.getElementById("instagramLink").setAttribute("data-link", data.otps.instagram.link || "");
+        const data = await response.json();
 
-                // Render Emails
-                document.getElementById("mailCount").innerText = `Total: ${data.emails.length}`;
-                data.emails.forEach(email => {
-                    const card = document.createElement("div");
-                    card.className = "email-card";
-                    card.innerHTML = `
-                        <div class="email-subject">${escapeHtml(email.subject)}</div>
-                        <div class="email-sender">${escapeHtml(email.sender)}</div>
-                        <div class="email-preview">${escapeHtml(email.preview)}</div>
-                    `;
-                    card.addEventListener("click", () => {
-                        document.getElementById("mSubject").innerText = email.subject;
-                        document.getElementById("mSender").innerText = `From: ${email.sender}`;
-                        document.getElementById("mBody").innerText = email.full_body || email.preview;
-                        document.getElementById("mailModal").style.display = "flex";
-                    });
-                    inboxList.appendChild(card);
+        if (data.success) {
+            if (data.otps) {
+                otpBoxContainer.style.display = 'grid';
+                
+                ['linkedin', 'facebook', 'instagram'].forEach(platform => {
+                    const otpData = data.otps[platform];
+                    const codeElem = document.getElementById(`${platform}Code`);
+                    const linkElem = document.getElementById(`${platform}Link`);
+
+                    codeElem.innerText = otpData.code || 'None';
+                    if (otpData.link) {
+                        linkElem.innerHTML = `<a href="${escapeHtml(otpData.link)}" target="_blank" class="otp-link-btn">Open Link</a>`;
+                    } else {
+                        linkElem.innerHTML = '<span style="font-size:12px; color:#484f58;">No Link</span>';
+                    }
                 });
-                inboxWrapper.style.display = "block";
-            } else {
-                throw new Error(data.error || "Failed to load.");
             }
-        } catch (err) {
-            errorMessage.innerText = err.message;
-            errorMessage.style.display = "block";
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerText = "Fetch Inbox & Extract OTP";
-        }
-    });
 
-    function copyText(elem) {
-        const link = elem.getAttribute("data-link");
-        const val = link !== null ? link : elem.innerText;
-        if(val && val !== "None" && val !== "No Link") {
-            navigator.clipboard.writeText(val);
-            alert("Copied: " + val);
+            if (data.emails && data.emails.length > 0) {
+                loadedEmails = data.emails;
+                let html = '';
+                data.emails.forEach((item, index) => {
+                    html += `
+                        <div class="email-item" onclick="openModal(${index})">
+                            <div class="email-header">
+                                <span class="email-sender">${escapeHtml(item.sender)}</span>
+                                <span>${escapeHtml(item.date)}</span>
+                            </div>
+                            <div class="email-subject">${escapeHtml(item.subject)}</div>
+                            <div class="email-preview">${escapeHtml(item.preview)}</div>
+                        </div>
+                    `;
+                });
+                emailList.innerHTML = html;
+            }
+        } else {
+            errorBox.innerText = data.error || 'একটি ত্রুটি ঘটেছে।';
+            errorBox.style.display = 'block';
         }
+
+    } catch (err) {
+        errorBox.innerText = 'সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে: ' + err.message;
+        errorBox.style.display = 'block';
+    } finally {
+        submitBtn.disabled = false;
+        loader.style.display = 'none';
     }
+});
 
-    document.getElementById("modalClose").onclick = () => document.getElementById("mailModal").style.display = "none";
+function openModal(index) {
+    const email = loadedEmails[index];
+    if(email) {
+        document.getElementById('modalSubject').innerText = email.subject;
+        document.getElementById('modalSender').innerText = "From: " + email.sender + " (" + email.date + ")";
+        document.getElementById('modalBody').innerText = email.preview;
+        document.getElementById('emailModal').style.display = 'flex';
+    }
+}
+
+function closeModal() {
+    document.getElementById('emailModal').style.display = 'none';
+}
 </script>
 
 </body>
