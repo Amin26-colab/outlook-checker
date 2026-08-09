@@ -16,19 +16,27 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
-def extract_otp_and_link(text):
+def extract_otp_and_link(text, html_content=""):
     otp = None
     link = None
     
-    # 6 to 8 digit OTP/Code extraction
-    otp_match = re.search(r'\b\d{6,8}\b', text)
+    # 5 to 8 digit OTP/Code extraction (Facebook 5 digits included)
+    otp_match = re.search(r'\b\d{5,8}\b', text)
     if otp_match:
         otp = otp_match.group(0)
 
-    # Magic link / Verification URL extraction
-    link_match = re.search(r'https?://[^\s<>"]+', text)
-    if link_match:
-        link = link_match.group(0)
+    # Magic link / Verification URL extraction from HTML href or Text
+    if html_content:
+        links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html_content)
+        # Filter action/verification links
+        valid_links = [l for l in links if "linkedin.com" in l or "facebook.com" in l or "instagram.com" in l or "confirm" in l or "verify" in l or "action" in l or "code" in l]
+        if valid_links:
+            link = valid_links[0]
+            
+    if not link:
+        link_match = re.search(r'https?://[^\s<>"]+', text)
+        if link_match:
+            link = link_match.group(0)
 
     return otp, link
 
@@ -97,7 +105,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     pass
 
             print("--> [7] Navigating to Outlook Inbox...")
-            # Direct Navigation to Web Mail Client
             await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=40000)
             
             print("--> [8] Waiting for Inbox Render...")
@@ -112,7 +119,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
             print("--> [9] Parsing Emails & Extracting OTPs...")
             
-            # Updated Comprehensive Selectors Range
             selectors = [
                 'div[data-automation-id="ListItem"]',
                 'div[role="option"]',
@@ -124,7 +130,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             
             inbox_items = None
             
-            # Try waiting for any valid selector first
             for sel in selectors:
                 try:
                     loc = page.locator(sel)
@@ -136,7 +141,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     continue
 
-            # Fallback Retry if DOM delay occurred
             if not inbox_items:
                 print("--> Retrying to find email elements after 3s delay...")
                 await asyncio.sleep(3)
@@ -153,15 +157,34 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 for i in range(min(count, 15)):
                     try:
                         item = inbox_items.nth(i)
+                        
+                        # Click email item to load full reading pane
+                        try:
+                            await item.click()
+                            await asyncio.sleep(1)
+                        except Exception:
+                            pass
+
                         aria_label = await item.get_attribute("aria-label") or ""
                         text = await item.inner_text()
                         
-                        full_content = (aria_label + "\n" + text).strip()
+                        # Read full email body & HTML from Reading Pane
+                        body_content = ""
+                        html_content = ""
+                        try:
+                            body_elem = page.locator('div[aria-label="Message body"], div[data-tabgroup="messageBody"], div[role="document"]').first
+                            if await body_elem.is_visible():
+                                body_content = await body_elem.inner_text()
+                                html_content = await body_elem.inner_html()
+                        except Exception:
+                            pass
+
+                        full_content = (aria_label + "\n" + text + "\n" + body_content).strip()
                         lines = [line.strip() for line in text.split('\n') if line.strip()]
                         
                         sender = lines[0] if len(lines) > 0 else "Outlook Sender"
                         subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
-                        preview = " ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Preview available")
+                        preview = body_content if body_content else (" ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Content available"))
 
                         # Date Parsing Logic
                         date_match = re.search(r'(\d{1,2}:\d{2}\s?(?:AM|PM)?|\d{1,2}/\d{1,2}/\d{4}|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', aria_label + " " + text, re.IGNORECASE)
@@ -176,7 +199,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
                         # Social OTP & Verification Link Filtering
                         lower_content = full_content.lower()
-                        code, link = extract_otp_and_link(full_content)
+                        code, link = extract_otp_and_link(full_content, html_content)
 
                         if ("linkedin" in lower_content or "linkedin" in sender.lower()) and not otps["linkedin"]["code"]:
                             otps["linkedin"]["code"] = code
