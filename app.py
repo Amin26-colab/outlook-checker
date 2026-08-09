@@ -37,11 +37,11 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         page = await context.new_page()
 
         try:
-            # step 1
+            # Step 1: Navigating to login page
             print("--> [3] Navigating to login.live.com...")
             await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
-            # step 2
+            # Step 2: Entering email
             print("--> [4] Entering Email...")
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
             await email_input.wait_for(state="visible", timeout=15000)
@@ -54,7 +54,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # step 3
+            # Step 3: Entering password
             print("--> [5] Entering Password...")
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
             await pass_input.wait_for(state="visible", timeout=15000)
@@ -67,7 +67,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # step 4
+            # Step 4: Security prompts handling
             print("--> [6] Handling Security Prompts...")
             await asyncio.sleep(3)
             skip_selectors = ['#iCancel', 'a:has-text("Cancel")', 'a:has-text("Skip")', '#acceptButton', '#idSIButton9']
@@ -80,26 +80,36 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     pass
 
-            # step 5
+            # Step 5: Direct navigation to Outlook Inbox
             print("--> [7] Navigating to Outlook Inbox...")
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
             print("--> [8] Waiting for Inbox Elements...")
-            await page.wait_for_selector('div[role="listbox"], div[role="option"]', timeout=25000)
+            # Attached state wait to prevent timeout error
+            await page.wait_for_selector('div[role="option"]', state="attached", timeout=25000)
+            await asyncio.sleep(2)
             
-            emails = await page.locator('div[role="option"]').all()
             email_list = []
-            
             print("--> [9] Parsing Emails...")
-            for item in emails[:10]:
-                text = await item.inner_text()
-                lines = [line.strip() for line in text.split('\n') if line.strip()]
-                if lines:
-                    email_list.append({
-                        "sender": lines[0] if len(lines) > 0 else "Unknown",
-                        "subject": lines[1] if len(lines) > 1 else "No Subject",
-                        "preview": lines[2] if len(lines) > 2 else ""
-                    })
+            
+            emails = page.locator('div[role="option"]')
+            count = await emails.count()
+            print(f"--> Found {count} email elements")
+
+            for i in range(min(count, 10)):
+                try:
+                    item = emails.nth(i)
+                    text = await item.inner_text()
+                    lines = [line.strip() for line in text.split('\n') if line.strip()]
+                    if lines:
+                        email_list.append({
+                            "sender": lines[0] if len(lines) > 0 else "Unknown",
+                            "subject": lines[1] if len(lines) > 1 else "No Subject",
+                            "preview": lines[2] if len(lines) > 2 else ""
+                        })
+                except Exception as inner_e:
+                    print(f"--> Error parsing email {i}: {inner_e}")
+                    continue
 
             await browser.close()
 
