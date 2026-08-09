@@ -20,12 +20,12 @@ def extract_otp_and_link(text, html_content=""):
     otp = None
     link = None
     
-    # 5 to 8 digit OTP/Code extraction (Facebook 5 digits included)
-    otp_match = re.search(r'\b\d{5,8}\b', text)
+    # 4 to 8 digit OTP/Code extraction
+    otp_match = re.search(r'\b\d{4,8}\b', text)
     if otp_match:
         otp = otp_match.group(0)
 
-    # Magic link / Verification URL extraction from HTML href or Text
+    # Magic link / Verification URL extraction
     if html_content:
         links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html_content)
         valid_links = [l for l in links if "linkedin.com" in l or "facebook.com" in l or "instagram.com" in l or "confirm" in l or "verify" in l or "action" in l or "code" in l]
@@ -38,6 +38,19 @@ def extract_otp_and_link(text, html_content=""):
             link = link_match.group(0)
 
     return otp, link
+
+async def inject_clean_css(page):
+    """Outlook Interface clean CSS injection"""
+    try:
+        custom_css = """
+            #o365header, #HeaderPane, header, [role='region'][aria-label*='Header'] { display: none !important; }
+            #LeftRail, [data-app-section='LeftRail'], div[role='navigation'] { display: none !important; }
+            #ribbonRoot, [role='menubar'], [aria-label*='Ribbon'], [data-app-section='CommandBar'] { display: none !important; }
+            #adUnit, [aria-label*='Advertisement'] { display: none !important; }
+        """
+        await page.add_style_tag(content=custom_css)
+    except Exception:
+        pass
 
 @app.post("/fetch-inbox")
 async def fetch_inbox(email: str = Form(""), password: str = Form("")):
@@ -61,75 +74,97 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             viewport={"width": 1366, "height": 768}
         )
         page = await context.new_page()
 
-        # Block media assets to increase execution speed
+        # Webdriver evasion
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+        # Block media assets
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         try:
             print("--> [3] Navigating to login.live.com...")
-            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=35000)
+            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
+            # Step 1: Submit Email
             print("--> [4] Entering Email...")
-            email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
-            await email_input.wait_for(state="visible", timeout=15000)
-            await email_input.click()
-            await email_input.press_sequentially(email, delay=40)
-            await asyncio.sleep(1)
+            email_selectors = "input[name='loginfmt'], input[type='email'], #i0116"
+            await page.wait_for_selector(email_selectors, timeout=15000)
+            await page.fill(email_selectors, email)
+            
+            submit_btn = "input[type='submit'], #idSIButton9, button[type='submit']"
+            await page.click(submit_btn)
+            await asyncio.sleep(1.5)
 
-            try:
-                await email_input.press("Enter")
-            except Exception:
-                await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
+            # Step 2: Handle "Use Password" option if prompt appears
+            password_input_selector = "input[name='passwd'], input[type='password'], #i0118"
+            pwd_field = page.locator(password_input_selector).first
+            
+            for _ in range(5):
+                if await pwd_field.is_visible():
+                    break
+                try:
+                    pwd_link = page.get_by_text("Use your password", exact=False).first
+                    if await pwd_link.is_visible():
+                        await pwd_link.click()
+                        await asyncio.sleep(1)
+                        break
+                    
+                    fallback = page.locator("#idA_PWD, [id*='PWD'], a:has-text('password')").first
+                    if await fallback.is_visible():
+                        await fallback.click()
+                        await asyncio.sleep(1)
+                        break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.4)
 
-            await asyncio.sleep(2)
-            if await page.locator("#usernameError").is_visible():
-                await browser.close()
-                return JSONResponse(
-                    status_code=400, 
-                    content={"success": False, "error": "ভুল ইমেইল এড্রেস দেওয়া হয়েছে।"}
-                )
-
+            # Step 3: Submit Password
             print("--> [5] Entering Password...")
-            pass_input = page.locator('input[type="password"], input[name="passwd"]').first
-            await pass_input.wait_for(state="visible", timeout=15000)
-            await pass_input.click()
-            await pass_input.press_sequentially(password, delay=40)
-            await asyncio.sleep(1)
+            await page.wait_for_selector(password_input_selector, timeout=10000)
+            await page.fill(password_input_selector, password)
+            await page.click(submit_btn)
+            
+            print("--> [6] Verifying Credentials & Checking Errors...")
+            await asyncio.sleep(2.5)
 
-            try:
-                await pass_input.press("Enter")
-            except Exception:
-                await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
-
-            await asyncio.sleep(2)
-            if await page.locator("#passwordError").is_visible():
+            # Body Error Check Logic
+            body_text = (await page.locator("body").inner_text()).lower()
+            
+            if "password sign-in isn't available" in body_text or "isn't available. try another method" in body_text:
                 await browser.close()
-                return JSONResponse(
-                    status_code=400, 
-                    content={"success": False, "error": "ভুল পাসওয়ার্ড দেওয়া হয়েছে।"}
-                )
+                return JSONResponse(status_code=400, content={"success": False, "error": "⚠️ Error: Password sign-in isn't available. Please use VPN!"})
 
-            print("--> [6] Handling Security Prompts...")
-            await asyncio.sleep(3)
+            if "password is incorrect" in body_text or "your account or password is incorrect" in body_text or "incorrect for your microsoft account" in body_text:
+                await browser.close()
+                return JSONResponse(status_code=400, content={"success": False, "error": "❌ Error: Password is Incorrect!"})
+
+            if "account has been locked" in body_text or "help us protect your account" in body_text or "verify your identity" in body_text or "unusual activity" in body_text:
+                await browser.close()
+                return JSONResponse(status_code=400, content={"success": False, "error": "⚠️ Error: Account Locked or Verification Needed!"})
+
+            # Handle Skip Prompts (Stay Signed In, etc.)
             skip_selectors = ['#iCancel', 'a:has-text("Cancel")', 'a:has-text("Skip")', '#acceptButton', '#idSIButton9', 'button:has-text("Yes")', 'button:has-text("No")']
             for selector in skip_selectors:
                 try:
                     btn = page.locator(selector).first
                     if await btn.is_visible():
                         await btn.click()
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(1.5)
                 except Exception:
                     pass
 
-            print("--> [7] Navigating to Outlook Inbox...")
-            await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=40000)
-            
-            print("--> [8] Waiting for Inbox Render...")
-            await asyncio.sleep(6)
+            # Step 4: Redirect to Inbox
+            print("--> [7] Redirecting to Inbox...")
+            try:
+                await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+
+            await inject_clean_css(page)
+            await asyncio.sleep(4)
 
             email_list = []
             otps = {
@@ -138,14 +173,13 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 "instagram": {"code": None, "link": None}
             }
 
-            print("--> [9] Parsing Emails & Extracting OTPs...")
+            print("--> [8] Extracting Emails & OTPs...")
             selectors = [
+                '[role="option"]',
+                '[data-convid]',
+                'div[aria-label*="Notification"]',
                 'div[data-automation-id="ListItem"]',
-                'div[role="option"]',
-                'div[role="article"]',
-                'div[data-convid]',
-                'div[role="listitem"]',
-                'div[aria-label*="Select a conversation"]'
+                'div[role="listitem"]'
             ]
             
             inbox_items = None
@@ -155,29 +189,19 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     cnt = await loc.count()
                     if cnt > 0:
                         inbox_items = loc
-                        print(f"--> Found {cnt} elements using selector: {sel}")
                         break
                 except Exception:
                     continue
 
-            if not inbox_items:
-                await asyncio.sleep(3)
-                for sel in selectors:
-                    loc = page.locator(sel)
-                    cnt = await loc.count()
-                    if cnt > 0:
-                        inbox_items = loc
-                        break
-
             if inbox_items:
                 count = await inbox_items.count()
-                for i in range(min(count, 15)):
+                for i in range(min(count, 12)):
                     try:
                         item = inbox_items.nth(i)
                         
                         try:
                             await item.click()
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(0.8)
                         except Exception:
                             pass
 
@@ -197,9 +221,9 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                         full_content = (aria_label + "\n" + text + "\n" + body_content).strip()
                         lines = [line.strip() for line in text.split('\n') if line.strip()]
                         
-                        sender = lines[0] if len(lines) > 0 else "Outlook Sender"
+                        sender = lines[0] if len(lines) > 0 else "Outlook User"
                         subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
-                        preview = body_content if body_content else (" ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Content available"))
+                        preview = body_content if body_content else (" ".join(lines[2:]) if len(lines) > 2 else aria_label)
 
                         date_match = re.search(r'(\d{1,2}:\d{2}\s?(?:AM|PM)?|\d{1,2}/\d{1,2}/\d{4}|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', aria_label + " " + text, re.IGNORECASE)
                         date_str = date_match.group(0) if date_match else "Recently"
@@ -217,7 +241,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                         if ("linkedin" in lower_content or "linkedin" in sender.lower()) and not otps["linkedin"]["code"]:
                             otps["linkedin"]["code"] = code
                             otps["linkedin"]["link"] = link
-                        elif ("facebook" in lower_content or "facebook" in sender.lower()) and not otps["facebook"]["code"]:
+                        elif ("facebook" in lower_content or "fb" in lower_content or "facebook" in sender.lower()) and not otps["facebook"]["code"]:
                             otps["facebook"]["code"] = code
                             otps["facebook"]["link"] = link
                         elif ("instagram" in lower_content or "instagram" in sender.lower()) and not otps["instagram"]["code"]:
@@ -225,25 +249,22 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                             otps["instagram"]["link"] = link
 
                     except Exception as inner_e:
-                        print(f"--> Error parsing email {i}: {inner_e}")
                         continue
 
             await browser.close()
 
             if email_list:
-                print("--> [SUCCESS] Inbox fetched and OTPs extracted successfully!")
-                return JSONResponse(content={
-                    "success": True, 
-                    "otps": otps, 
-                    "emails": email_list
-                })
+                print("--> [SUCCESS] Completed Successfully!")
+                return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
             else:
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
-            print(f"--> [ERROR] Exception occurred: {error_msg}")
+            print(f"--> [ERROR]: {error_msg}")
             await browser.close()
+            if "timeout" in error_msg.lower():
+                return JSONResponse(content={"success": False, "error": "❌ Error: Network Timeout / Slow Internet!"}, status_code=500)
             return JSONResponse(content={"success": False, "error": f"প্রসেস করার সময় ত্রুটি ঘটেছে: {error_msg}"}, status_code=500)
 
 if __name__ == "__main__":
