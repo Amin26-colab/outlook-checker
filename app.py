@@ -8,7 +8,6 @@ from playwright.async_api import async_playwright
 
 app = FastAPI()
 
-# Render/Docker-এ টেমপ্লেটের পাথ নিশ্চিত করা
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -38,11 +37,11 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         page = await context.new_page()
 
         try:
-            # Step 1: Navigating to login page
+            # Step 1: Login Page
             print("--> [3] Navigating to login.live.com...")
             await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
-            # Step 2: Entering email
+            # Step 2: Email Entry
             print("--> [4] Entering Email...")
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
             await email_input.wait_for(state="visible", timeout=15000)
@@ -55,7 +54,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # Step 3: Entering password
+            # Step 3: Password Entry
             print("--> [5] Entering Password...")
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
             await pass_input.wait_for(state="visible", timeout=15000)
@@ -68,7 +67,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # Step 4: Security prompts handling
+            # Step 4: Security Prompts
             print("--> [6] Handling Security Prompts...")
             await asyncio.sleep(3)
             skip_selectors = ['#iCancel', 'a:has-text("Cancel")', 'a:has-text("Skip")', '#acceptButton', '#idSIButton9']
@@ -81,32 +80,44 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     pass
 
-            # Step 5: Direct navigation to Outlook Inbox
+            # Step 5: Direct Inbox Load
             print("--> [7] Navigating to Outlook Inbox...")
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
-            print("--> [8] Waiting for Inbox Elements...")
-            inbox_locator = page.locator('div[role="option"]')
-            await inbox_locator.first.wait_for(state="attached", timeout=25000)
-            await asyncio.sleep(2)
+            print("--> [8] Waiting for Inbox Render...")
+            # wait_for না রেখে ইনবক্স স্ক্রিন পুরোপুরি লোড হওয়ার জন্য কাস্টম ৫ সেকেন্ড পজ দেওয়া হলো
+            await asyncio.sleep(6)
             
             email_list = []
             print("--> [9] Parsing Emails...")
             
+            inbox_locator = page.locator('div[role="option"]')
             count = await inbox_locator.count()
             print(f"--> Found {count} email elements")
 
             for i in range(min(count, 10)):
                 try:
                     item = inbox_locator.nth(i)
+                    
+                    # aria-label থেকেও ফলব্যাক ডাটা নেওয়ার ব্যবস্থা করা হলো
+                    aria_label = await item.get_attribute("aria-label") or ""
                     text = await item.inner_text()
                     lines = [line.strip() for line in text.split('\n') if line.strip()]
+                    
                     if lines:
-                        email_list.append({
-                            "sender": lines[0] if len(lines) > 0 else "Unknown",
-                            "subject": lines[1] if len(lines) > 1 else "No Subject",
-                            "preview": lines[2] if len(lines) > 2 else ""
-                        })
+                        sender = lines[0]
+                        subject = lines[1] if len(lines) > 1 else aria_label[:50]
+                        preview = lines[2] if len(lines) > 2 else aria_label
+                    else:
+                        sender = "Outlook Mail"
+                        subject = aria_label[:40] if aria_label else "No Subject"
+                        preview = aria_label
+
+                    email_list.append({
+                        "sender": sender,
+                        "subject": subject,
+                        "preview": preview
+                    })
                 except Exception as inner_e:
                     print(f"--> Error parsing email {i}: {inner_e}")
                     continue
