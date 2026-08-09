@@ -85,42 +85,49 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
             print("--> [8] Waiting for Inbox Render...")
-            # wait_for না রেখে ইনবক্স স্ক্রিন পুরোপুরি লোড হওয়ার জন্য কাস্টম ৫ সেকেন্ড পজ দেওয়া হলো
-            await asyncio.sleep(6)
+            await asyncio.sleep(7)
             
             email_list = []
             print("--> [9] Parsing Emails...")
             
-            inbox_locator = page.locator('div[role="option"]')
-            count = await inbox_locator.count()
-            print(f"--> Found {count} email elements")
+            # একাধিক সম্ভাব্য সিলেক্টর দিয়ে মেইল খোঁজা
+            selectors = ['div[role="option"]', 'div[data-convid]', 'div[aria-label*="Select a conversation"]']
+            inbox_items = None
+            
+            for sel in selectors:
+                loc = page.locator(sel)
+                cnt = await loc.count()
+                if cnt > 0:
+                    inbox_items = loc
+                    print(f"--> Found {cnt} elements using selector: {sel}")
+                    break
 
-            for i in range(min(count, 10)):
-                try:
-                    item = inbox_locator.nth(i)
-                    
-                    # aria-label থেকেও ফলব্যাক ডাটা নেওয়ার ব্যবস্থা করা হলো
-                    aria_label = await item.get_attribute("aria-label") or ""
-                    text = await item.inner_text()
-                    lines = [line.strip() for line in text.split('\n') if line.strip()]
-                    
-                    if lines:
-                        sender = lines[0]
-                        subject = lines[1] if len(lines) > 1 else aria_label[:50]
-                        preview = lines[2] if len(lines) > 2 else aria_label
-                    else:
-                        sender = "Outlook Mail"
-                        subject = aria_label[:40] if aria_label else "No Subject"
-                        preview = aria_label
+            if inbox_items:
+                count = await inbox_items.count()
+                for i in range(min(count, 10)):
+                    try:
+                        item = inbox_items.nth(i)
+                        aria_label = await item.get_attribute("aria-label") or ""
+                        text = await item.inner_text()
+                        lines = [line.strip() for line in text.split('\n') if line.strip()]
+                        
+                        if lines:
+                            sender = lines[0]
+                            subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
+                            preview = lines[2] if len(lines) > 2 else aria_label
+                        else:
+                            sender = "Outlook User"
+                            subject = aria_label[:40] if aria_label else "No Subject"
+                            preview = aria_label or "New Message"
 
-                    email_list.append({
-                        "sender": sender,
-                        "subject": subject,
-                        "preview": preview
-                    })
-                except Exception as inner_e:
-                    print(f"--> Error parsing email {i}: {inner_e}")
-                    continue
+                        email_list.append({
+                            "sender": sender,
+                            "subject": subject,
+                            "preview": preview
+                        })
+                    except Exception as inner_e:
+                        print(f"--> Error parsing email {i}: {inner_e}")
+                        continue
 
             await browser.close()
 
@@ -129,7 +136,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 return JSONResponse(content={"success": True, "emails": email_list})
             else:
                 print("--> [WARNING] No emails found in inbox.")
-                return JSONResponse(content={"success": False, "error": "No emails found in inbox."}, status_code=400)
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো মেইল পাওয়া যায়নি (ইনবক্স ফাঁকা অথবা ২FA প্রোম্পট এসেছে)।"}, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
