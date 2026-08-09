@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Outlook Fast Inbox</title>
+    <title>Socialverse-Ready Fast Inbox</title>
     <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { background-color: #0b1120; color: #f1f5f9; margin: 0; padding: 20px 15px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -14,13 +14,17 @@
         label { font-size: 13px; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500; }
         input[type="text"], input[type="password"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #283654; border-radius: 8px; font-size: 14px; color: #ffffff; outline: none; transition: 0.2s; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
-        button { width: 100%; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-top: 5px; }
+        
+        .btn-group { display: flex; gap: 10px; margin-top: 5px; }
+        button { flex: 1; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { background: #0369a1; }
         button:disabled { background: #334155; cursor: not-allowed; opacity: 0.7; }
+        .reset-btn { background: #d9534f; flex: 0.3; }
+        .reset-btn:hover { background: #c9302c; }
         
         /* OTP Dashboard Section */
         .otp-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
-        .otp-card { background: #0f172a; border: 1px solid #23304d; border-radius: 8px; padding: 12px; text-align: center; position: relative; }
+        .otp-card { background: #0f172a; border: 1px solid #23304d; border-radius: 8px; padding: 12px; text-align: center; }
         .otp-card .title { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; }
         .otp-card .code-box { font-size: 18px; font-weight: bold; color: #38bdf8; background: #1e293b; padding: 6px; border-radius: 6px; cursor: pointer; letter-spacing: 1px; user-select: all; }
         .otp-card .code-box:hover { background: #334155; }
@@ -43,7 +47,7 @@
         .email-sender { font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
         .email-preview { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        /* Modal Popup for Full Email */
+        /* Modal Popup */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-content { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 600px; padding: 20px; max-height: 85vh; overflow-y: auto; position: relative; }
         .modal-close { position: absolute; top: 12px; right: 15px; font-size: 22px; color: #94a3b8; cursor: pointer; }
@@ -55,7 +59,7 @@
 <body>
 
 <div class="main-card">
-    <h2>Outlook Fast Inbox</h2>
+    <h2>Socialverse-Ready Inbox</h2>
     
     <form id="checkerForm">
         <div class="form-group">
@@ -66,7 +70,10 @@
             <label>Password</label>
             <input type="password" id="password" name="password" placeholder="••••••••" required>
         </div>
-        <button type="submit" id="submitBtn">Fetch Inbox & Extract OTP</button>
+        <div class="btn-group">
+            <button type="submit" id="submitBtn">Start Login & Fetch Inbox</button>
+            <button type="button" id="resetBtn" class="reset-btn" onclick="clearForm()">Reset</button>
+        </div>
     </form>
 
     <!-- OTP Section -->
@@ -100,7 +107,7 @@
     </div>
 </div>
 
-<!-- Email View Modal -->
+<!-- Modal -->
 <div id="mailModal" class="modal-overlay">
     <div class="modal-content">
         <span class="modal-close" id="modalClose">&times;</span>
@@ -113,12 +120,7 @@
 <script>
     function escapeHtml(text) {
         if (!text) return '';
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
     document.getElementById("checkerForm").addEventListener("submit", async function(e) {
@@ -145,11 +147,10 @@
             try {
                 data = JSON.parse(responseText);
             } catch (jsonErr) {
-                throw new Error("সার্ভার থেকে সঠিক JSON পাওয়া যায়নি। ক্র্যাশ বা রেসপন্স ড্রপ হয়েছে।");
+                throw new Error("সার্ভার থেকে সঠিক ডাটা পাওয়া যায়নি।");
             }
 
             if (response.ok && data.success) {
-                // Update OTPs and Links
                 ['linkedin', 'facebook', 'instagram'].forEach(platform => {
                     const otpData = data.otps[platform];
                     const otpElem = document.getElementById(`${platform}Otp`);
@@ -165,7 +166,6 @@
                     }
                 });
 
-                // Render Emails
                 document.getElementById("mailCount").innerText = `Total: ${data.emails.length}`;
                 data.emails.forEach(email => {
                     const card = document.createElement("div");
@@ -192,9 +192,21 @@
             errorMessage.style.display = "block";
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerText = "Fetch Inbox & Extract OTP";
+            submitBtn.innerText = "Start Login & Fetch Inbox";
         }
     });
+
+    function clearForm() {
+        document.getElementById("email").value = "";
+        document.getElementById("password").value = "";
+        document.getElementById("errorMessage").style.display = "none";
+        document.getElementById("inboxWrapper").style.display = "none";
+        ['linkedin', 'facebook', 'instagram'].forEach(platform => {
+            document.getElementById(`${platform}Otp`).innerText = "None";
+            document.getElementById(`${platform}Link`).innerText = "No Link";
+            document.getElementById(`${platform}Link`).removeAttribute("data-link");
+        });
+    }
 
     function copyText(elem) {
         const val = elem.innerText;
