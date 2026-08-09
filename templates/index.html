@@ -5,31 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Outlook Fast Inbox</title>
     <style>
-        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #f0f2f5; margin: 0; padding: 30px 15px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .main-card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 550px; padding: 30px; }
-        h2 { color: #0078d4; text-align: center; margin-top: 0; margin-bottom: 25px; font-weight: 600; }
-        .form-group { margin-bottom: 18px; }
-        label { font-weight: 600; display: block; margin-bottom: 6px; color: #333; font-size: 14px; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 12px; border: 1px solid #cccccc; border-radius: 6px; font-size: 14px; outline: none; transition: 0.3s; }
-        input:focus { border-color: #0078d4; box-shadow: 0 0 5px rgba(0,120,212,0.3); }
-        button { width: 100%; background: #0078d4; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-top: 10px; }
-        button:hover { background: #005a9e; }
-        button:disabled { background: #a6a6a6; cursor: not-allowed; }
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #0b1120; color: #f1f5f9; margin: 0; padding: 20px 15px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .main-card { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 650px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h2 { color: #38bdf8; text-align: center; margin-top: 0; margin-bottom: 20px; font-weight: 600; font-size: 22px; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { font-size: 13px; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #283654; border-radius: 8px; font-size: 14px; color: #ffffff; outline: none; transition: 0.2s; }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
+        button { width: 100%; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-top: 5px; }
+        button:hover { background: #0369a1; }
+        button:disabled { background: #334155; cursor: not-allowed; opacity: 0.7; }
         
         /* Live Status Logs Box */
-        .log-box { display: none; background: #1e1e1e; color: #00ff66; padding: 15px; border-radius: 6px; font-family: 'Courier New', Courier, monospace; font-size: 13px; margin-top: 20px; max-height: 150px; overflow-y: auto; }
-        
-        /* Inbox Container */
-        .inbox-container { margin-top: 25px; display: none; }
-        .inbox-title { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 12px; border-bottom: 2px solid #0078d4; padding-bottom: 5px; }
-        .email-card { background: #f9fbfd; border-left: 4px solid #0078d4; padding: 12px 15px; border-radius: 4px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .email-sender { font-weight: bold; color: #106ebe; font-size: 14px; }
-        .email-subject { font-weight: 600; color: #201f1e; margin: 4px 0; font-size: 13px; }
-        .email-preview { color: #605e5c; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .log-box { display: none; background: #080d1a; color: #4ade80; padding: 12px 15px; border-radius: 8px; border: 1px solid #1e293b; font-family: 'Courier New', Courier, monospace; font-size: 12px; margin-top: 15px; max-height: 120px; overflow-y: auto; }
         
         /* Error Box */
-        .error-message { color: #d13438; background: #fde8e8; padding: 10px; border-radius: 6px; margin-top: 15px; text-align: center; font-size: 14px; display: none; }
+        .error-message { color: #f87171; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center; font-size: 13px; display: none; }
+
+        /* Inbox Scrollable Container */
+        .inbox-wrapper { margin-top: 25px; display: none; }
+        .inbox-header { font-size: 15px; font-weight: 600; color: #e2e8f0; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .inbox-list { max-height: 480px; overflow-y: auto; padding-right: 5px; }
+        .inbox-list::-webkit-scrollbar { width: 6px; }
+        .inbox-list::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        .inbox-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+        /* Email Card Styling (SS Like) */
+        .email-card { background: #131c31; border: 1px solid #212e4a; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; position: relative; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
+        .email-card:hover { border-color: #38bdf8; transform: translateY(-1px); }
+        .email-card.unread { border: 1px solid #ea580c; }
+        
+        .card-top { display: flex; align-items: flex-start; gap: 12px; }
+        .mail-icon { background: #1e293b; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .email-card.unread .mail-icon { background: #c2410c; }
+        .mail-icon svg { width: 18px; height: 18px; fill: #94a3b8; }
+        .email-card.unread .mail-icon svg { fill: #ffffff; }
+
+        .card-content { flex-grow: 1; overflow: hidden; }
+        .email-subject { font-size: 14px; font-weight: 600; color: #f8fafc; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
+        .email-sender { font-size: 12px; color: #94a3b8; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .email-preview { font-size: 12px; color: #64748b; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
+        
+        .card-bottom { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; }
+        .badge-new { position: absolute; top: 14px; right: 14px; background: #ea580c; color: #ffffff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 12px; text-transform: uppercase; }
+
+        /* Modal for Viewing Mail Detail */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
+        .modal-content { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 550px; padding: 20px; max-height: 80vh; overflow-y: auto; position: relative; }
+        .modal-close { position: absolute; top: 12px; right: 15px; font-size: 20px; color: #94a3b8; cursor: pointer; }
+        .modal-close:hover { color: #fff; }
+        .modal-subject { font-size: 16px; font-weight: bold; color: #f8fafc; margin-bottom: 8px; padding-right: 20px; }
+        .modal-sender { font-size: 12px; color: #38bdf8; margin-bottom: 15px; border-bottom: 1px solid #23304d; padding-bottom: 10px; }
+        .modal-body { font-size: 13px; color: #cbd5e1; line-height: 1.6; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -49,16 +78,26 @@
         <button type="submit" id="submitBtn">Check Inbox</button>
     </form>
 
-    <!-- Live Log Console -->
     <div id="logBox" class="log-box"></div>
-
-    <!-- Error View -->
     <div id="errorMessage" class="error-message"></div>
 
-    <!-- Inbox Results View -->
-    <div id="inboxContainer" class="inbox-container">
-        <div class="inbox-title">Recent Inbox Messages</div>
-        <div id="emailList"></div>
+    <!-- Scrollable Inbox List -->
+    <div id="inboxWrapper" class="inbox-wrapper">
+        <div class="inbox-header">
+            <span>Inbox Messages</span>
+            <span id="mailCount" style="font-size: 12px; color: #94a3b8;"></span>
+        </div>
+        <div id="inboxList" class="inbox-list"></div>
+    </div>
+</div>
+
+<!-- Modal Viewer -->
+<div id="mailModal" class="modal-overlay">
+    <div class="modal-content">
+        <span class="modal-close" id="modalClose">&times;</span>
+        <div class="modal-subject" id="mSubject"></div>
+        <div class="modal-sender" id="mSender"></div>
+        <div class="modal-body" id="mBody"></div>
     </div>
 </div>
 
@@ -69,25 +108,24 @@
         const submitBtn = document.getElementById("submitBtn");
         const logBox = document.getElementById("logBox");
         const errorMessage = document.getElementById("errorMessage");
-        const inboxContainer = document.getElementById("inboxContainer");
-        const emailList = document.getElementById("emailList");
+        const inboxWrapper = document.getElementById("inboxWrapper");
+        const inboxList = document.getElementById("inboxList");
+        const mailCount = document.getElementById("mailCount");
 
-        // Reset display
         submitBtn.disabled = true;
         errorMessage.style.display = "none";
-        inboxContainer.style.display = "none";
-        emailList.innerHTML = "";
+        inboxWrapper.style.display = "none";
+        inboxList.innerHTML = "";
         logBox.style.display = "block";
-        logBox.innerHTML = "--> Starting background browser automation...<br>";
+        logBox.innerHTML = "--> [1] Starting browser automation...<br>";
 
         const formData = new FormData(e.target);
 
         try {
-            // Update live logs simulate
-            setTimeout(() => { logBox.innerHTML += "--> Navigating to login.live.com...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 1500);
-            setTimeout(() => { logBox.innerHTML += "--> Entering credentials...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 3500);
-            setTimeout(() => { logBox.innerHTML += "--> Navigating to Outlook Inbox...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 7000);
-            setTimeout(() => { logBox.innerHTML += "--> Extracting emails...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 10000);
+            setTimeout(() => { logBox.innerHTML += "--> [2] Navigating to login.live.com...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 1200);
+            setTimeout(() => { logBox.innerHTML += "--> [3] Authenticating credentials...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 3000);
+            setTimeout(() => { logBox.innerHTML += "--> [4] Opening Outlook Mailbox...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 6500);
+            setTimeout(() => { logBox.innerHTML += "--> [5] Extracting inbox contents...<br>"; logBox.scrollTop = logBox.scrollHeight; }, 9500);
 
             const response = await fetch("/fetch-inbox", {
                 method: "POST",
@@ -97,29 +135,62 @@
             const data = await response.json();
 
             if (data.success && data.emails && data.emails.length > 0) {
-                logBox.innerHTML += "<span style='color:#00ff00;'>--> [SUCCESS] Emails loaded successfully!</span><br>";
-                
-                data.emails.forEach(email => {
+                logBox.innerHTML += "<span style='color:#4ade80;'>--> [SUCCESS] Mailbox loaded successfully!</span><br>";
+                mailCount.innerText = `Total: ${data.emails.length}`;
+
+                data.emails.forEach((email, idx) => {
+                    const isNew = idx < 3; // Top items tagged as new
                     const card = document.createElement("div");
-                    card.className = "email-card";
+                    card.className = `email-card ${isNew ? 'unread' : ''}`;
+                    
                     card.innerHTML = `
-                        <div class="email-sender">${escapeHtml(email.sender)}</div>
-                        <div class="email-subject">${escapeHtml(email.subject)}</div>
-                        <div class="email-preview">${escapeHtml(email.preview)}</div>
+                        ${isNew ? '<span class="badge-new">New</span>' : ''}
+                        <div class="card-top">
+                            <div class="mail-icon">
+                                <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                            </div>
+                            <div class="card-content">
+                                <div class="email-subject">${escapeHtml(email.subject)}</div>
+                                <div class="email-sender">${escapeHtml(email.sender)}</div>
+                                <div class="email-preview">${escapeHtml(email.preview)}</div>
+                                <div class="card-bottom">
+                                    <span>⏱ ${email.date || 'Today'}</span>
+                                </div>
+                            </div>
+                        </div>
                     `;
-                    emailList.appendChild(card);
+
+                    // Click to open full details
+                    card.addEventListener("click", () => {
+                        document.getElementById("mSubject").innerText = email.subject;
+                        document.getElementById("mSender").innerText = `Sender: ${email.sender}`;
+                        document.getElementById("mBody").innerText = email.preview || email.subject;
+                        document.getElementById("mailModal").style.display = "flex";
+                    });
+
+                    inboxList.appendChild(card);
                 });
 
-                inboxContainer.style.display = "block";
+                inboxWrapper.style.display = "block";
             } else {
-                throw new Error(data.error || "Failed to fetch inbox messages.");
+                throw new Error(data.error || "Failed to parse inbox.");
             }
         } catch (err) {
-            logBox.innerHTML += `<span style='color:#ff4d4d;'>--> [ERROR] ${err.message}</span><br>`;
+            logBox.innerHTML += `<span style='color:#f87171;'>--> [ERROR] ${err.message}</span><br>`;
             errorMessage.innerText = err.message;
             errorMessage.style.display = "block";
         } finally {
             submitBtn.disabled = false;
+        }
+    });
+
+    // Close Modal Event
+    document.getElementById("modalClose").addEventListener("click", () => {
+        document.getElementById("mailModal").style.display = "none";
+    });
+    document.getElementById("mailModal").addEventListener("click", (e) => {
+        if(e.target === document.getElementById("mailModal")) {
+            document.getElementById("mailModal").style.display = "none";
         }
     });
 
