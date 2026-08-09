@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -20,7 +21,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
     print(f"--> [1] Request received for Email: {email}")
     
     async with async_playwright() as p:
-        print("--> [2] Launching Playwright Chromium Browser...")
+        print("--> [2] Launching Playwright Chromium...")
         browser = await p.chromium.launch(
             headless=True,
             args=[
@@ -37,16 +38,14 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         page = await context.new_page()
 
         try:
-            # Step 1: Login Page
             print("--> [3] Navigating to login.live.com...")
             await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
-            # Step 2: Email Entry
             print("--> [4] Entering Email...")
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
             await email_input.wait_for(state="visible", timeout=15000)
             await email_input.click()
-            await email_input.press_sequentially(email, delay=50)
+            await email_input.press_sequentially(email, delay=40)
             await asyncio.sleep(1)
 
             try:
@@ -54,12 +53,11 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # Step 3: Password Entry
             print("--> [5] Entering Password...")
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
             await pass_input.wait_for(state="visible", timeout=15000)
             await pass_input.click()
-            await pass_input.press_sequentially(password, delay=50)
+            await pass_input.press_sequentially(password, delay=40)
             await asyncio.sleep(1)
 
             try:
@@ -67,7 +65,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
-            # Step 4: Security Prompts
             print("--> [6] Handling Security Prompts...")
             await asyncio.sleep(3)
             skip_selectors = ['#iCancel', 'a:has-text("Cancel")', 'a:has-text("Skip")', '#acceptButton', '#idSIButton9']
@@ -80,7 +77,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     pass
 
-            # Step 5: Direct Inbox Load
             print("--> [7] Navigating to Outlook Inbox...")
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
@@ -90,7 +86,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             email_list = []
             print("--> [9] Parsing Emails...")
             
-            # একাধিক সম্ভাব্য সিলেক্টর দিয়ে মেইল খোঁজা
             selectors = ['div[role="option"]', 'div[data-convid]', 'div[aria-label*="Select a conversation"]']
             inbox_items = None
             
@@ -104,26 +99,26 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
             if inbox_items:
                 count = await inbox_items.count()
-                for i in range(min(count, 10)):
+                for i in range(min(count, 15)):
                     try:
                         item = inbox_items.nth(i)
                         aria_label = await item.get_attribute("aria-label") or ""
                         text = await item.inner_text()
                         lines = [line.strip() for line in text.split('\n') if line.strip()]
                         
-                        if lines:
-                            sender = lines[0]
-                            subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
-                            preview = lines[2] if len(lines) > 2 else aria_label
-                        else:
-                            sender = "Outlook User"
-                            subject = aria_label[:40] if aria_label else "No Subject"
-                            preview = aria_label or "New Message"
+                        sender = lines[0] if len(lines) > 0 else "Outlook Sender"
+                        subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
+                        preview = " ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Preview available")
+
+                        # Try extracting time/date pattern from aria-label or text
+                        date_match = re.search(r'(\d{1,2}:\d{2}\s?(?:AM|PM)?|\d{1,2}/\d{1,2}/\d{4}|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', aria_label + " " + text, re.IGNORECASE)
+                        date_str = date_match.group(0) if date_match else "Recently"
 
                         email_list.append({
                             "sender": sender,
                             "subject": subject,
-                            "preview": preview
+                            "preview": preview,
+                            "date": date_str
                         })
                     except Exception as inner_e:
                         print(f"--> Error parsing email {i}: {inner_e}")
@@ -136,7 +131,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 return JSONResponse(content={"success": True, "emails": email_list})
             else:
                 print("--> [WARNING] No emails found in inbox.")
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো মেইল পাওয়া যায়নি (ইনবক্স ফাঁকা অথবা ২FA প্রোম্পট এসেছে)।"}, status_code=400)
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
