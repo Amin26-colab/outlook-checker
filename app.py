@@ -48,12 +48,12 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1366, "height": 768}
         )
         page = await context.new_page()
 
-        # Optimize Speed: Block heavy images/fonts without breaking Outlook layout
+        # Block images/fonts to speed up request
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         try:
@@ -97,11 +97,12 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     pass
 
             print("--> [7] Navigating to Outlook Inbox...")
-            await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
+            # Direct Navigation to Web Mail Client
+            await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=40000)
             
             print("--> [8] Waiting for Inbox Render...")
-            await asyncio.sleep(7)
-            
+            await asyncio.sleep(6)
+
             email_list = []
             otps = {
                 "linkedin": {"code": None, "link": None},
@@ -111,21 +112,41 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
             print("--> [9] Parsing Emails & Extracting OTPs...")
             
+            # Updated Comprehensive Selectors Range
             selectors = [
-                'div[role="option"]', 
-                'div[data-convid]', 
-                'div[role="listitem"]', 
+                'div[data-automation-id="ListItem"]',
+                'div[role="option"]',
+                'div[role="article"]',
+                'div[data-convid]',
+                'div[role="listitem"]',
                 'div[aria-label*="Select a conversation"]'
             ]
+            
             inbox_items = None
             
+            # Try waiting for any valid selector first
             for sel in selectors:
-                loc = page.locator(sel)
-                cnt = await loc.count()
-                if cnt > 0:
-                    inbox_items = loc
-                    print(f"--> Found {cnt} elements using selector: {sel}")
-                    break
+                try:
+                    loc = page.locator(sel)
+                    cnt = await loc.count()
+                    if cnt > 0:
+                        inbox_items = loc
+                        print(f"--> Found {cnt} elements using selector: {sel}")
+                        break
+                except Exception:
+                    continue
+
+            # Fallback Retry if DOM delay occurred
+            if not inbox_items:
+                print("--> Retrying to find email elements after 3s delay...")
+                await asyncio.sleep(3)
+                for sel in selectors:
+                    loc = page.locator(sel)
+                    cnt = await loc.count()
+                    if cnt > 0:
+                        inbox_items = loc
+                        print(f"--> [Retry Successful] Found {cnt} elements using selector: {sel}")
+                        break
 
             if inbox_items:
                 count = await inbox_items.count()
