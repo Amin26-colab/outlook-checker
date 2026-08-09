@@ -17,14 +17,15 @@ async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 def extract_otp_and_link(text):
-    # Regex to extract 6 or 8 digit codes and links
     otp = None
     link = None
     
+    # 6 to 8 digit OTP extraction
     otp_match = re.search(r'\b\d{6,8}\b', text)
     if otp_match:
         otp = otp_match.group(0)
 
+    # URL extraction
     link_match = re.search(r'https?://[^\s<>"]+', text)
     if link_match:
         link = link_match.group(0)
@@ -36,13 +37,22 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
-        context = await browser.new_context(viewport={"width": 1280, "height": 720})
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720}
+        )
         
-        # Performance optimization: Block unnecessary assets
         page = await context.new_page()
-        await page.route("**/*.{png,jpg,jpeg,svg,css,woff2}", lambda route: route.abort())
+
+        # Only block heavy media (images, media, fonts) to ensure UI renders fast without breaking
+        await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         otps = {
             "linkedin": {"code": None, "link": None},
@@ -52,78 +62,96 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         email_list = []
 
         try:
-            # Login Process
-            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=20000)
+            # Step 1: Login Page
+            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=25000)
 
+            # Step 2: Email Entry
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
+            await email_input.wait_for(state="visible", timeout=10000)
             await email_input.fill(email)
             await page.keyboard.press("Enter")
 
+            # Step 3: Password Entry
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
             await pass_input.wait_for(state="visible", timeout=10000)
             await pass_input.fill(password)
             await page.keyboard.press("Enter")
 
-            # Quick Skip Prompts
-            await asyncio.sleep(2)
+            # Step 4: Handle Prompts / Security
+            await asyncio.sleep(2.5)
             try:
-                btn = page.locator('#idSIButton9, #acceptButton').first
+                btn = page.locator('#idSIButton9, #acceptButton, #iCancel').first
                 if await btn.is_visible():
                     await btn.click()
             except Exception:
                 pass
 
-            # Direct Inbox Route
-            await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=30000)
+            # Step 5: Direct Outlook Navigation
+            await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=35000)
             
-            # Smart wait for emails
-            inbox_locator = page.locator('div[role="option"]')
-            await inbox_locator.first.wait_for(state="attached", timeout=15000)
-            
-            count = await inbox_locator.count()
+            # Allow Outlook DOM elements to populate
+            await asyncio.sleep(5)
 
-            for i in range(min(count, 12)):
-                try:
-                    item = inbox_locator.nth(i)
-                    text = await item.inner_text()
-                    aria = await item.get_attribute("aria-label") or ""
-                    full_content = aria + "\n" + text
+            # Multiple Selector Fallback
+            selectors = ['div[role="option"]', 'div[data-convid]', 'div[aria-label*="Select a conversation"]']
+            inbox_locator = None
 
-                    lines = [line.strip() for line in text.split('\n') if line.strip()]
-                    sender = lines[0] if lines else "Unknown"
-                    subject = lines[1] if len(lines) > 1 else aria[:40]
-                    preview = lines[2] if len(lines) > 2 else full_content
+            for sel in selectors:
+                loc = page.locator(sel)
+                if await loc.count() > 0:
+                    inbox_locator = loc
+                    break
 
-                    email_list.append({
-                        "sender": sender,
-                        "subject": subject,
-                        "preview": preview,
-                        "full_body": full_content
-                    })
+            if inbox_locator:
+                count = await inbox_locator.count()
 
-                    # Auto OTP & Link Scraping
-                    lower_content = full_content.lower()
-                    code, link = extract_otp_and_link(full_content)
+                for i in range(min(count, 15)):
+                    try:
+                        item = inbox_locator.nth(i)
+                        aria = await item.get_attribute("aria-label") or ""
+                        text = await item.inner_text()
+                        
+                        full_content = (aria + "\n" + text).strip()
+                        lines = [line.strip() for line in text.split('\n') if line.strip()]
 
-                    if "linkedin" in lower_content and not otps["linkedin"]["code"]:
-                        otps["linkedin"]["code"] = code
-                        otps["linkedin"]["link"] = link
-                    elif "facebook" in lower_content and not otps["facebook"]["code"]:
-                        otps["facebook"]["code"] = code
-                        otps["facebook"]["link"] = link
-                    elif "instagram" in lower_content and not otps["instagram"]["code"]:
-                        otps["instagram"]["code"] = code
-                        otps["instagram"]["link"] = link
+                        sender = lines[0] if lines else "Outlook Sender"
+                        subject = lines[1] if len(lines) > 1 else (aria[:40] if aria else "No Subject")
+                        preview = " ".join(lines[2:]) if len(lines) > 2 else full_content
 
-                except Exception:
-                    continue
+                        email_list.append({
+                            "sender": sender,
+                            "subject": subject,
+                            "preview": preview,
+                            "full_body": full_content
+                        })
+
+                        # OTP & Link Extraction Logic
+                        lower_content = full_content.lower()
+                        code, link = extract_otp_and_link(full_content)
+
+                        if ("linkedin" in lower_content or "linkedin" in sender.lower()) and not otps["linkedin"]["code"]:
+                            otps["linkedin"]["code"] = code
+                            otps["linkedin"]["link"] = link
+                        elif ("facebook" in lower_content or "facebook" in sender.lower()) and not otps["facebook"]["code"]:
+                            otps["facebook"]["code"] = code
+                            otps["facebook"]["link"] = link
+                        elif ("instagram" in lower_content or "instagram" in sender.lower()) and not otps["instagram"]["code"]:
+                            otps["instagram"]["code"] = code
+                            otps["instagram"]["link"] = link
+
+                    except Exception:
+                        continue
 
             await browser.close()
-            return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
+
+            if email_list:
+                return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
+            else:
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো মেইল পাওয়া যায়নি বা অ্যাকাউন্ট সিকিউরিটি ভেরিফিকেশনে আটকে গেছে।"}, status_code=400)
 
         except Exception as e:
             await browser.close()
-            return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+            return JSONResponse(content={"success": False, "error": f"Process Failed: {str(e)}"}, status_code=500)
 
 if __name__ == "__main__":
     import uvicorn
