@@ -24,7 +24,7 @@
         .otp-card .title { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; }
         .otp-card .code-box { font-size: 18px; font-weight: bold; color: #38bdf8; background: #1e293b; padding: 6px; border-radius: 6px; cursor: pointer; letter-spacing: 1px; user-select: all; }
         .otp-card .code-box:hover { background: #334155; }
-        .otp-card .link-btn { display: block; margin-top: 8px; font-size: 11px; color: #38bdf8; text-decoration: none; word-break: break-all; background: rgba(56, 189, 248, 0.1); padding: 4px; border-radius: 4px; border: 1px dashed #0284c7; cursor: pointer; }
+        .otp-card .link-btn { display: block; margin-top: 8px; font-size: 11px; color: #38bdf8; text-decoration: none; word-break: break-all; background: rgba(56, 189, 248, 0.1); padding: 6px; border-radius: 4px; border: 1px dashed #0284c7; cursor: pointer; }
 
         /* Error Box */
         .error-message { color: #f87171; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center; font-size: 13px; display: none; }
@@ -74,17 +74,17 @@
         <div class="otp-card">
             <div class="title">LinkedIn</div>
             <div class="code-box" id="linkedinOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="linkedinLink" onclick="copyText(this)">No Link</div>
+            <div class="link-btn" id="linkedinLink" onclick="handleLinkClick(this)">No Link</div>
         </div>
         <div class="otp-card">
             <div class="title">Facebook</div>
             <div class="code-box" id="facebookOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="facebookLink" onclick="copyText(this)">No Link</div>
+            <div class="link-btn" id="facebookLink" onclick="handleLinkClick(this)">No Link</div>
         </div>
         <div class="otp-card">
             <div class="title">Instagram</div>
             <div class="code-box" id="instagramOtp" onclick="copyText(this)">None</div>
-            <div class="link-btn" id="instagramLink" onclick="copyText(this)">No Link</div>
+            <div class="link-btn" id="instagramLink" onclick="handleLinkClick(this)">No Link</div>
         </div>
     </div>
 
@@ -112,14 +112,15 @@
 
 <script>
     function escapeHtml(text) {
-    if (!text) return '';
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     document.getElementById("checkerForm").addEventListener("submit", async function(e) {
         e.preventDefault();
         
@@ -141,18 +142,21 @@
             const data = await response.json();
 
             if (data.success) {
-                // Update OTPs
-                document.getElementById("linkedinOtp").innerText = data.otps.linkedin.code || "None";
-                document.getElementById("linkedinLink").innerText = data.otps.linkedin.link ? "Copy Link" : "No Link";
-                document.getElementById("linkedinLink").setAttribute("data-link", data.otps.linkedin.link || "");
+                // Update OTPs and Links
+                ['linkedin', 'facebook', 'instagram'].forEach(platform => {
+                    const otpData = data.otps[platform];
+                    const otpElem = document.getElementById(`${platform}Otp`);
+                    const linkElem = document.getElementById(`${platform}Link`);
 
-                document.getElementById("facebookOtp").innerText = data.otps.facebook.code || "None";
-                document.getElementById("facebookLink").innerText = data.otps.facebook.link ? "Copy Link" : "No Link";
-                document.getElementById("facebookLink").setAttribute("data-link", data.otps.facebook.link || "");
-
-                document.getElementById("instagramOtp").innerText = data.otps.instagram.code || "None";
-                document.getElementById("instagramLink").innerText = data.otps.instagram.link ? "Copy Link" : "No Link";
-                document.getElementById("instagramLink").setAttribute("data-link", data.otps.instagram.link || "");
+                    otpElem.innerText = otpData.code || "None";
+                    if (otpData.link) {
+                        linkElem.innerText = "Open Link";
+                        linkElem.setAttribute("data-link", otpData.link);
+                    } else {
+                        linkElem.innerText = "No Link";
+                        linkElem.removeAttribute("data-link");
+                    }
+                });
 
                 // Render Emails
                 document.getElementById("mailCount").innerText = `Total: ${data.emails.length}`;
@@ -161,13 +165,13 @@
                     card.className = "email-card";
                     card.innerHTML = `
                         <div class="email-subject">${escapeHtml(email.subject)}</div>
-                        <div class="email-sender">${escapeHtml(email.sender)}</div>
+                        <div class="email-sender">${escapeHtml(email.sender)} • <span style="font-size:11px; color:#64748b;">${escapeHtml(email.date)}</span></div>
                         <div class="email-preview">${escapeHtml(email.preview)}</div>
                     `;
                     card.addEventListener("click", () => {
                         document.getElementById("mSubject").innerText = email.subject;
-                        document.getElementById("mSender").innerText = `From: ${email.sender}`;
-                        document.getElementById("mBody").innerText = email.full_body || email.preview;
+                        document.getElementById("mSender").innerText = `From: ${email.sender} (${email.date})`;
+                        document.getElementById("mBody").innerText = email.preview; // Display full parsed body
                         document.getElementById("mailModal").style.display = "flex";
                     });
                     inboxList.appendChild(card);
@@ -186,15 +190,26 @@
     });
 
     function copyText(elem) {
-        const link = elem.getAttribute("data-link");
-        const val = link !== null ? link : elem.innerText;
-        if(val && val !== "None" && val !== "No Link") {
+        const val = elem.innerText;
+        if(val && val !== "None") {
             navigator.clipboard.writeText(val);
-            alert("Copied: " + val);
+            alert("Copied OTP: " + val);
+        }
+    }
+
+    function handleLinkClick(elem) {
+        const link = elem.getAttribute("data-link");
+        if(link) {
+            window.open(link, "_blank");
         }
     }
 
     document.getElementById("modalClose").onclick = () => document.getElementById("mailModal").style.display = "none";
+    window.onclick = (e) => {
+        if(e.target === document.getElementById("mailModal")) {
+            document.getElementById("mailModal").style.display = "none";
+        }
+    };
 </script>
 
 </body>
