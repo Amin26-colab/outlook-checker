@@ -139,9 +139,16 @@
 
         try {
             const response = await fetch("/fetch-inbox", { method: "POST", body: formData });
-            const data = await response.json();
+            const responseText = await response.text();
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (jsonErr) {
+                throw new Error("সার্ভার থেকে সঠিক JSON পাওয়া যায়নি। ক্র্যাশ বা রেসপন্স ড্রপ হয়েছে।");
+            }
 
-            if (data.success) {
+            if (response.ok && data.success) {
                 // Update OTPs and Links
                 ['linkedin', 'facebook', 'instagram'].forEach(platform => {
                     const otpData = data.otps[platform];
@@ -171,14 +178,14 @@
                     card.addEventListener("click", () => {
                         document.getElementById("mSubject").innerText = email.subject;
                         document.getElementById("mSender").innerText = `From: ${email.sender} (${email.date})`;
-                        document.getElementById("mBody").innerText = email.preview; // Display full parsed body
+                        document.getElementById("mBody").innerText = email.preview;
                         document.getElementById("mailModal").style.display = "flex";
                     });
                     inboxList.appendChild(card);
                 });
                 inboxWrapper.style.display = "block";
             } else {
-                throw new Error(data.error || "Failed to load.");
+                throw new Error(data.error || "ইনবক্স লোড করতে ব্যর্থ হয়েছে।");
             }
         } catch (err) {
             errorMessage.innerText = err.message;
