@@ -156,15 +156,22 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     pass
 
-            # Step 4: Redirect to Inbox
+            # Step 4: Redirect to Inbox & Wait
             print("--> [7] Redirecting to Inbox...")
             try:
-                await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=30000)
+                await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="networkidle", timeout=35000)
             except Exception:
                 pass
 
             await inject_clean_css(page)
-            await asyncio.sleep(4)
+
+            # Wait for any mail list container to appear
+            try:
+                await page.wait_for_selector('div[role="listitem"], div[role="option"], [data-convid]', timeout=15000)
+            except Exception:
+                print("--> Warning: Explicit mail container selector wait timed out, proceeding to fallback scan...")
+
+            await asyncio.sleep(3)
 
             email_list = []
             otps = {
@@ -174,12 +181,14 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             }
 
             print("--> [8] Extracting Emails & OTPs...")
+            
+            # Smart Dynamic Selectors for Outlook Web
             selectors = [
-                '[role="option"]',
+                'div[role="listitem"]',
+                'div[role="option"]',
                 '[data-convid]',
-                'div[aria-label*="Notification"]',
                 'div[data-automation-id="ListItem"]',
-                'div[role="listitem"]'
+                'div[aria-label*="Message"]'
             ]
             
             inbox_items = None
@@ -189,29 +198,38 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     cnt = await loc.count()
                     if cnt > 0:
                         inbox_items = loc
+                        print(f"--> Found {cnt} emails using selector: {sel}")
                         break
                 except Exception:
                     continue
 
+            # Fallback strategy: If explicit selectors fail, get all clickable list rows
+            if not inbox_items:
+                inbox_items = page.locator('div[tabindex="0"][role]')
+
             if inbox_items:
                 count = await inbox_items.count()
-                for i in range(min(count, 12)):
+                for i in range(min(count, 15)):
                     try:
                         item = inbox_items.nth(i)
                         
+                        # Click item to trigger preview load
                         try:
-                            await item.click()
-                            await asyncio.sleep(0.8)
+                            await item.click(timeout=2000)
+                            await asyncio.sleep(0.6)
                         except Exception:
                             pass
 
                         aria_label = await item.get_attribute("aria-label") or ""
                         text = await item.inner_text()
                         
+                        if not text.strip():
+                            continue
+
                         body_content = ""
                         html_content = ""
                         try:
-                            body_elem = page.locator('div[aria-label="Message body"], div[data-tabgroup="messageBody"], div[role="document"]').first
+                            body_elem = page.locator('div[aria-label="Message body"], div[role="main"], div[data-tabgroup="messageBody"]').first
                             if await body_elem.is_visible():
                                 body_content = await body_elem.inner_text()
                                 html_content = await body_elem.inner_html()
@@ -221,7 +239,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                         full_content = (aria_label + "\n" + text + "\n" + body_content).strip()
                         lines = [line.strip() for line in text.split('\n') if line.strip()]
                         
-                        sender = lines[0] if len(lines) > 0 else "Outlook User"
+                        sender = lines[0] if len(lines) > 0 else "Outlook Mail"
                         subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
                         preview = body_content if body_content else (" ".join(lines[2:]) if len(lines) > 2 else aria_label)
 
@@ -257,7 +275,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 print("--> [SUCCESS] Completed Successfully!")
                 return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
             else:
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি অথবা ইনবক্স খালি।"}, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
@@ -266,8 +284,3 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             if "timeout" in error_msg.lower():
                 return JSONResponse(content={"success": False, "error": "❌ Error: Network Timeout / Slow Internet!"}, status_code=500)
             return JSONResponse(content={"success": False, "error": f"প্রসেস করার সময় ত্রুটি ঘটেছে: {error_msg}"}, status_code=500)
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
