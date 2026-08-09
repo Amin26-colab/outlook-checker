@@ -45,13 +45,13 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 720}
         )
         
         page = await context.new_page()
 
-        # Only block heavy media (images, media, fonts) to ensure UI renders fast without breaking
+        # Block heavy media files to keep performance fast
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         otps = {
@@ -63,39 +63,48 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
         try:
             # Step 1: Login Page
-            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=25000)
+            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
             # Step 2: Email Entry
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
-            await email_input.wait_for(state="visible", timeout=10000)
+            await email_input.wait_for(state="visible", timeout=12000)
             await email_input.fill(email)
             await page.keyboard.press("Enter")
 
             # Step 3: Password Entry
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
-            await pass_input.wait_for(state="visible", timeout=10000)
+            await pass_input.wait_for(state="visible", timeout=12000)
             await pass_input.fill(password)
             await page.keyboard.press("Enter")
 
-            # Step 4: Handle Prompts / Security
-            await asyncio.sleep(2.5)
-            try:
-                btn = page.locator('#idSIButton9, #acceptButton, #iCancel').first
-                if await btn.is_visible():
-                    await btn.click()
-            except Exception:
-                pass
+            # Step 4: Handle "Stay Signed In" / Prompts
+            await asyncio.sleep(3)
+            prompt_buttons = ['#idSIButton9', '#acceptButton', '#iCancel', 'button:has-text("Yes")', 'button:has-text("No")']
+            for btn_sel in prompt_buttons:
+                try:
+                    btn = page.locator(btn_sel).first
+                    if await btn.is_visible():
+                        await btn.click()
+                        await asyncio.sleep(2)
+                except Exception:
+                    pass
 
             # Step 5: Direct Outlook Navigation
-            await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=35000)
+            await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
-            # Allow Outlook DOM elements to populate
-            await asyncio.sleep(5)
+            # Wait for Inbox UI rendering
+            await asyncio.sleep(6)
 
-            # Multiple Selector Fallback
-            selectors = ['div[role="option"]', 'div[data-convid]', 'div[aria-label*="Select a conversation"]']
+            # Multi-Selector Support for Outlook
+            selectors = [
+                'div[role="option"]',
+                'div[data-convid]',
+                'div[role="listitem"]',
+                'div[aria-label*="Select a conversation"]',
+                'div[aria-label*="Email"]'
+            ]
+            
             inbox_locator = None
-
             for sel in selectors:
                 loc = page.locator(sel)
                 if await loc.count() > 0:
@@ -147,7 +156,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             if email_list:
                 return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
             else:
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো মেইল পাওয়া যায়নি বা অ্যাকাউন্ট সিকিউরিটি ভেরিফিকেশনে আটকে গেছে।"}, status_code=400)
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি। অ্যাকাউন্টে ২-স্টেপ ভেরিফিকেশন অথবা আইপি ব্লকিং আছে কিনা পরীক্ষা করুন।"}, status_code=400)
 
         except Exception as e:
             await browser.close()
