@@ -1,6 +1,6 @@
 import os
-import re
 import asyncio
+import re
 from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -20,12 +20,12 @@ def extract_otp_and_link(text):
     otp = None
     link = None
     
-    # 6 to 8 digit OTP extraction
+    # 6 to 8 digit OTP/Code extraction
     otp_match = re.search(r'\b\d{6,8}\b', text)
     if otp_match:
         otp = otp_match.group(0)
 
-    # URL extraction
+    # Magic link / Verification URL extraction
     link_match = re.search(r'https?://[^\s<>"]+', text)
     if link_match:
         link = link_match.group(0)
@@ -34,7 +34,10 @@ def extract_otp_and_link(text):
 
 @app.post("/fetch-inbox")
 async def fetch_inbox(email: str = Form(""), password: str = Form("")):
+    print(f"--> [1] Request received for Email: {email}")
+    
     async with async_playwright() as p:
+        print("--> [2] Launching Playwright Chromium...")
         browser = await p.chromium.launch(
             headless=True,
             args=[
@@ -45,96 +48,112 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 720}
         )
-        
         page = await context.new_page()
 
-        # Block heavy media files to keep performance fast
+        # Optimize Speed: Block heavy images/fonts without breaking Outlook layout
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
-        otps = {
-            "linkedin": {"code": None, "link": None},
-            "facebook": {"code": None, "link": None},
-            "instagram": {"code": None, "link": None}
-        }
-        email_list = []
-
         try:
-            # Step 1: Login Page
+            print("--> [3] Navigating to login.live.com...")
             await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
-            # Step 2: Email Entry
+            print("--> [4] Entering Email...")
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
-            await email_input.wait_for(state="visible", timeout=12000)
-            await email_input.fill(email)
-            await page.keyboard.press("Enter")
+            await email_input.wait_for(state="visible", timeout=15000)
+            await email_input.click()
+            await email_input.press_sequentially(email, delay=40)
+            await asyncio.sleep(1)
 
-            # Step 3: Password Entry
+            try:
+                await email_input.press("Enter")
+            except Exception:
+                await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
+
+            print("--> [5] Entering Password...")
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
-            await pass_input.wait_for(state="visible", timeout=12000)
-            await pass_input.fill(password)
-            await page.keyboard.press("Enter")
+            await pass_input.wait_for(state="visible", timeout=15000)
+            await pass_input.click()
+            await pass_input.press_sequentially(password, delay=40)
+            await asyncio.sleep(1)
 
-            # Step 4: Handle "Stay Signed In" / Prompts
+            try:
+                await pass_input.press("Enter")
+            except Exception:
+                await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
+
+            print("--> [6] Handling Security Prompts...")
             await asyncio.sleep(3)
-            prompt_buttons = ['#idSIButton9', '#acceptButton', '#iCancel', 'button:has-text("Yes")', 'button:has-text("No")']
-            for btn_sel in prompt_buttons:
+            skip_selectors = ['#iCancel', 'a:has-text("Cancel")', 'a:has-text("Skip")', '#acceptButton', '#idSIButton9', 'button:has-text("Yes")', 'button:has-text("No")']
+            for selector in skip_selectors:
                 try:
-                    btn = page.locator(btn_sel).first
+                    btn = page.locator(selector).first
                     if await btn.is_visible():
                         await btn.click()
                         await asyncio.sleep(2)
                 except Exception:
                     pass
 
-            # Step 5: Direct Outlook Navigation
+            print("--> [7] Navigating to Outlook Inbox...")
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
-            # Wait for Inbox UI rendering
-            await asyncio.sleep(6)
-
-            # Multi-Selector Support for Outlook
-            selectors = [
-                'div[role="option"]',
-                'div[data-convid]',
-                'div[role="listitem"]',
-                'div[aria-label*="Select a conversation"]',
-                'div[aria-label*="Email"]'
-            ]
+            print("--> [8] Waiting for Inbox Render...")
+            await asyncio.sleep(7)
             
-            inbox_locator = None
+            email_list = []
+            otps = {
+                "linkedin": {"code": None, "link": None},
+                "facebook": {"code": None, "link": None},
+                "instagram": {"code": None, "link": None}
+            }
+
+            print("--> [9] Parsing Emails & Extracting OTPs...")
+            
+            selectors = [
+                'div[role="option"]', 
+                'div[data-convid]', 
+                'div[role="listitem"]', 
+                'div[aria-label*="Select a conversation"]'
+            ]
+            inbox_items = None
+            
             for sel in selectors:
                 loc = page.locator(sel)
-                if await loc.count() > 0:
-                    inbox_locator = loc
+                cnt = await loc.count()
+                if cnt > 0:
+                    inbox_items = loc
+                    print(f"--> Found {cnt} elements using selector: {sel}")
                     break
 
-            if inbox_locator:
-                count = await inbox_locator.count()
-
+            if inbox_items:
+                count = await inbox_items.count()
                 for i in range(min(count, 15)):
                     try:
-                        item = inbox_locator.nth(i)
-                        aria = await item.get_attribute("aria-label") or ""
+                        item = inbox_items.nth(i)
+                        aria_label = await item.get_attribute("aria-label") or ""
                         text = await item.inner_text()
                         
-                        full_content = (aria + "\n" + text).strip()
+                        full_content = (aria_label + "\n" + text).strip()
                         lines = [line.strip() for line in text.split('\n') if line.strip()]
+                        
+                        sender = lines[0] if len(lines) > 0 else "Outlook Sender"
+                        subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
+                        preview = " ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Preview available")
 
-                        sender = lines[0] if lines else "Outlook Sender"
-                        subject = lines[1] if len(lines) > 1 else (aria[:40] if aria else "No Subject")
-                        preview = " ".join(lines[2:]) if len(lines) > 2 else full_content
+                        # Date Parsing Logic
+                        date_match = re.search(r'(\d{1,2}:\d{2}\s?(?:AM|PM)?|\d{1,2}/\d{1,2}/\d{4}|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', aria_label + " " + text, re.IGNORECASE)
+                        date_str = date_match.group(0) if date_match else "Recently"
 
                         email_list.append({
                             "sender": sender,
                             "subject": subject,
                             "preview": preview,
-                            "full_body": full_content
+                            "date": date_str
                         })
 
-                        # OTP & Link Extraction Logic
+                        # Social OTP & Verification Link Filtering
                         lower_content = full_content.lower()
                         code, link = extract_otp_and_link(full_content)
 
@@ -148,19 +167,28 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                             otps["instagram"]["code"] = code
                             otps["instagram"]["link"] = link
 
-                    except Exception:
+                    except Exception as inner_e:
+                        print(f"--> Error parsing email {i}: {inner_e}")
                         continue
 
             await browser.close()
 
             if email_list:
-                return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
+                print("--> [SUCCESS] Inbox fetched and OTPs extracted successfully!")
+                return JSONResponse(content={
+                    "success": True, 
+                    "otps": otps, 
+                    "emails": email_list
+                })
             else:
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি। অ্যাকাউন্টে ২-স্টেপ ভেরিফিকেশন অথবা আইপি ব্লকিং আছে কিনা পরীক্ষা করুন।"}, status_code=400)
+                print("--> [WARNING] No emails found in inbox.")
+                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
 
         except Exception as e:
+            error_msg = str(e)
+            print(f"--> [ERROR] Exception occurred: {error_msg}")
             await browser.close()
-            return JSONResponse(content={"success": False, "error": f"Process Failed: {str(e)}"}, status_code=500)
+            return JSONResponse(content={"success": False, "error": f"Failed at process: {error_msg}"}, status_code=500)
 
 if __name__ == "__main__":
     import uvicorn
