@@ -8,6 +8,7 @@ from playwright.async_api import async_playwright
 
 app = FastAPI()
 
+# Render/Docker-এ টেমপ্লেটের পাথ নিশ্চিত করা
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -85,20 +86,19 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             await page.goto("https://outlook.live.com/mail/0/", wait_until="domcontentloaded", timeout=40000)
             
             print("--> [8] Waiting for Inbox Elements...")
-            # Attached state wait to prevent timeout error
-            await page.wait_for_selector('div[role="option"]', state="attached", timeout=25000)
+            inbox_locator = page.locator('div[role="option"]')
+            await inbox_locator.first.wait_for(state="attached", timeout=25000)
             await asyncio.sleep(2)
             
             email_list = []
             print("--> [9] Parsing Emails...")
             
-            emails = page.locator('div[role="option"]')
-            count = await emails.count()
+            count = await inbox_locator.count()
             print(f"--> Found {count} email elements")
 
             for i in range(min(count, 10)):
                 try:
-                    item = emails.nth(i)
+                    item = inbox_locator.nth(i)
                     text = await item.inner_text()
                     lines = [line.strip() for line in text.split('\n') if line.strip()]
                     if lines:
