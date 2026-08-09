@@ -1,5 +1,5 @@
 import os
-import asyncio
+from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -7,11 +7,16 @@ from playwright.async_api import async_playwright
 
 app = FastAPI()
 
-templates = Jinja2Templates(directory="templates")
+# Absolute path targeting templates directory properly
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    try:
+        return templates.TemplateResponse("index.html", {"request": request})
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>Template Loading Error: {str(e)}</h3>", status_code=500)
 
 @app.post("/fetch-inbox")
 async def fetch_inbox(email: str = Form(""), password: str = Form("")):
