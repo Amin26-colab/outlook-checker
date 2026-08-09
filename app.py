@@ -28,7 +28,6 @@ def extract_otp_and_link(text, html_content=""):
     # Magic link / Verification URL extraction from HTML href or Text
     if html_content:
         links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html_content)
-        # Filter action/verification links
         valid_links = [l for l in links if "linkedin.com" in l or "facebook.com" in l or "instagram.com" in l or "confirm" in l or "verify" in l or "action" in l or "code" in l]
         if valid_links:
             link = valid_links[0]
@@ -44,6 +43,12 @@ def extract_otp_and_link(text, html_content=""):
 async def fetch_inbox(email: str = Form(""), password: str = Form("")):
     print(f"--> [1] Request received for Email: {email}")
     
+    if not email or not password:
+        return JSONResponse(
+            status_code=400, 
+            content={"success": False, "error": "ইমেইল এবং পাসওয়ার্ড প্রদান করা আবশ্যক।"}
+        )
+
     async with async_playwright() as p:
         print("--> [2] Launching Playwright Chromium...")
         browser = await p.chromium.launch(
@@ -61,12 +66,12 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         )
         page = await context.new_page()
 
-        # Block images/fonts to speed up request
+        # Block media assets to increase execution speed
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         try:
             print("--> [3] Navigating to login.live.com...")
-            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
+            await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=35000)
 
             print("--> [4] Entering Email...")
             email_input = page.locator('input[type="email"], input[name="loginfmt"]').first
@@ -80,6 +85,14 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
 
+            await asyncio.sleep(2)
+            if await page.locator("#usernameError").is_visible():
+                await browser.close()
+                return JSONResponse(
+                    status_code=400, 
+                    content={"success": False, "error": "ভুল ইমেইল এড্রেস দেওয়া হয়েছে।"}
+                )
+
             print("--> [5] Entering Password...")
             pass_input = page.locator('input[type="password"], input[name="passwd"]').first
             await pass_input.wait_for(state="visible", timeout=15000)
@@ -91,6 +104,14 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 await pass_input.press("Enter")
             except Exception:
                 await page.evaluate('document.querySelector("#idSIButton9, input[type=\\"submit\\"]").click()')
+
+            await asyncio.sleep(2)
+            if await page.locator("#passwordError").is_visible():
+                await browser.close()
+                return JSONResponse(
+                    status_code=400, 
+                    content={"success": False, "error": "ভুল পাসওয়ার্ড দেওয়া হয়েছে।"}
+                )
 
             print("--> [6] Handling Security Prompts...")
             await asyncio.sleep(3)
@@ -118,7 +139,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             }
 
             print("--> [9] Parsing Emails & Extracting OTPs...")
-            
             selectors = [
                 'div[data-automation-id="ListItem"]',
                 'div[role="option"]',
@@ -129,7 +149,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
             
             inbox_items = None
-            
             for sel in selectors:
                 try:
                     loc = page.locator(sel)
@@ -142,14 +161,12 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     continue
 
             if not inbox_items:
-                print("--> Retrying to find email elements after 3s delay...")
                 await asyncio.sleep(3)
                 for sel in selectors:
                     loc = page.locator(sel)
                     cnt = await loc.count()
                     if cnt > 0:
                         inbox_items = loc
-                        print(f"--> [Retry Successful] Found {cnt} elements using selector: {sel}")
                         break
 
             if inbox_items:
@@ -158,7 +175,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     try:
                         item = inbox_items.nth(i)
                         
-                        # Click email item to load full reading pane
                         try:
                             await item.click()
                             await asyncio.sleep(1)
@@ -168,7 +184,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                         aria_label = await item.get_attribute("aria-label") or ""
                         text = await item.inner_text()
                         
-                        # Read full email body & HTML from Reading Pane
                         body_content = ""
                         html_content = ""
                         try:
@@ -186,7 +201,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                         subject = lines[1] if len(lines) > 1 else (aria_label[:40] if aria_label else "No Subject")
                         preview = body_content if body_content else (" ".join(lines[2:]) if len(lines) > 2 else (aria_label or "No Content available"))
 
-                        # Date Parsing Logic
                         date_match = re.search(r'(\d{1,2}:\d{2}\s?(?:AM|PM)?|\d{1,2}/\d{1,2}/\d{4}|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', aria_label + " " + text, re.IGNORECASE)
                         date_str = date_match.group(0) if date_match else "Recently"
 
@@ -197,7 +211,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                             "date": date_str
                         })
 
-                        # Social OTP & Verification Link Filtering
                         lower_content = full_content.lower()
                         code, link = extract_otp_and_link(full_content, html_content)
 
@@ -225,14 +238,13 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     "emails": email_list
                 })
             else:
-                print("--> [WARNING] No emails found in inbox.")
                 return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি।"}, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
             print(f"--> [ERROR] Exception occurred: {error_msg}")
             await browser.close()
-            return JSONResponse(content={"success": False, "error": f"Failed at process: {error_msg}"}, status_code=500)
+            return JSONResponse(content={"success": False, "error": f"প্রসেস করার সময় ত্রুটি ঘটেছে: {error_msg}"}, status_code=500)
 
 if __name__ == "__main__":
     import uvicorn
