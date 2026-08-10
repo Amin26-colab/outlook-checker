@@ -1,6 +1,7 @@
 import os
 import asyncio
 import re
+import base64
 from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -81,7 +82,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
         # Webdriver evasion
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-        # Block media assets
+        # Block heavy media assets
         await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
 
         try:
@@ -156,14 +157,23 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     pass
 
-            # Step 4: Redirect to Inbox & Wait
+            # Step 4: Redirect to Inbox & Capture Live Screen
             print("--> [7] Redirecting to Inbox...")
             try:
-                await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="networkidle", timeout=35000)
+                await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="domcontentloaded", timeout=25000)
             except Exception:
                 pass
 
             await inject_clean_css(page)
+
+            # **ইনবক্সে আসার সাথে সাথে স্ক্রিনশট ক্যাপচার**
+            screenshot_base64 = ""
+            try:
+                await asyncio.sleep(1)
+                img_bytes = await page.screenshot(type='jpeg', quality=60)
+                screenshot_base64 = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+            except Exception:
+                pass
 
             # Wait for any mail list container to appear
             try:
@@ -171,7 +181,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             except Exception:
                 print("--> Warning: Explicit mail container selector wait timed out, proceeding to fallback scan...")
 
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
             email_list = []
             otps = {
@@ -182,7 +192,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
             print("--> [8] Extracting Emails & OTPs...")
             
-            # Smart Dynamic Selectors for Outlook Web
             selectors = [
                 'div[role="listitem"]',
                 'div[role="option"]',
@@ -203,7 +212,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 except Exception:
                     continue
 
-            # Fallback strategy: If explicit selectors fail, get all clickable list rows
             if not inbox_items:
                 inbox_items = page.locator('div[tabindex="0"][role]')
 
@@ -213,10 +221,9 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     try:
                         item = inbox_items.nth(i)
                         
-                        # Click item to trigger preview load
                         try:
-                            await item.click(timeout=2000)
-                            await asyncio.sleep(0.6)
+                            await item.click(timeout=1500)
+                            await asyncio.sleep(0.5)
                         except Exception:
                             pass
 
@@ -266,16 +273,25 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                             otps["instagram"]["code"] = code
                             otps["instagram"]["link"] = link
 
-                    except Exception as inner_e:
+                    except Exception:
                         continue
 
             await browser.close()
 
             if email_list:
                 print("--> [SUCCESS] Completed Successfully!")
-                return JSONResponse(content={"success": True, "otps": otps, "emails": email_list})
+                return JSONResponse(content={
+                    "success": True, 
+                    "otps": otps, 
+                    "emails": email_list,
+                    "screenshot": screenshot_base64
+                })
             else:
-                return JSONResponse(content={"success": False, "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি অথবা ইনবক্স খালি।"}, status_code=400)
+                return JSONResponse(content={
+                    "success": False, 
+                    "error": "ইনবক্সে কোনো ইমেইল পাওয়া যায়নি অথবা ইনবক্স খালি।",
+                    "screenshot": screenshot_base64
+                }, status_code=400)
 
         except Exception as e:
             error_msg = str(e)
@@ -283,4 +299,4 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             await browser.close()
             if "timeout" in error_msg.lower():
                 return JSONResponse(content={"success": False, "error": "❌ Error: Network Timeout / Slow Internet!"}, status_code=500)
-            return JSONResponse(content={"success": False, "error": f"প্রসেস করার সময় ত্রুটি ঘটেছে: {error_msg}"}, status_code=500)
+            return JSONResponse(content={"success": False, "error": f"প্রসেস করার সময় ত্রুটি ঘটেছে: {error_msg}"}, status_code=500)
