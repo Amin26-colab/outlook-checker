@@ -14,32 +14,16 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Target URL & Viewport defined as in PyQt code
+TARGET_URL = "https://outlook.live.com/mail/0/inbox"
+VIEWPORT = {"width": 330, "height": 550}
+
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
-def extract_otp_and_link(text, html_content=""):
-    otp = None
-    link = None
-    
-    otp_match = re.search(r'\b\d{4,8}\b', text)
-    if otp_match:
-        otp = otp_match.group(0)
-
-    if html_content:
-        links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html_content)
-        valid_links = [l for l in links if "linkedin.com" in l or "facebook.com" in l or "instagram.com" in l or "confirm" in l or "verify" in l or "action" in l or "code" in l]
-        if valid_links:
-            link = valid_links[0]
-            
-    if not link:
-        link_match = re.search(r'https?://[^\s<>"]+', text)
-        if link_match:
-            link = link_match.group(0)
-
-    return otp, link
-
-async def inject_clean_css(page):
+async def clean_outlook_interface(page):
+    """CSS injection matching PyQt code's clean_outlook_interface method"""
     try:
         custom_css = """
             #o365header, #HeaderPane, header, [role='region'][aria-label*='Header'] { display: none !important; }
@@ -48,6 +32,7 @@ async def inject_clean_css(page):
             #adUnit, [aria-label*='Advertisement'] { display: none !important; }
             body, #root, #mainFolderList, div[role='main'] {
                 height: 100vh !important;
+                max-height: 100vh !important;
                 width: 100vw !important;
                 margin: 0 !important;
                 padding: 0 !important;
@@ -66,193 +51,198 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             return
 
         async with async_playwright() as p:
-            yield json.dumps({"type": "status", "msg": "🚀 Launching Fast Engine..."}) + "\n"
+            yield json.dumps({"type": "status", "msg": "Starting Browser..."}) + "\n"
             
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-infobars"
-                ]
-            )
-            
-            # Optimization 1: Small viewport (like their VIEWPORT = {"width": 330, "height": 550})
+            # Browser argument setup as in PyQt code
+            browser_args = [
+                "--disable-blink-features=AutomationControlled", 
+                "--no-sandbox",
+                "--disable-infobars"
+            ]
+            browser = await p.chromium.launch(headless=True, args=browser_args)
+
+            # Context setup as in init_browser_session
             context = await browser.new_context(
-                viewport={"width": 360, "height": 600},
+                viewport=VIEWPORT,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
 
-            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-            await page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}", lambda route: route.abort())
+            # Init script for navigator.webdriver
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            """)
 
             try:
-                yield json.dumps({"type": "status", "msg": "🌐 Accessing Login Page..."}) + "\n"
-                
-                # Fast domcontentloaded
-                await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=25000)
+                # ------------------- PROCESS LOGIN (PyQt Flow) -------------------[cite: 3]
+                yield json.dumps({"type": "status", "msg": "Opening login page..."}) + "\n"
+                await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
-                # Step 1: Submit Email
-                yield json.dumps({"type": "status", "msg": "📧 Submitting Email..."}) + "\n"
+                yield json.dumps({"type": "status", "msg": "Submitting Email..."}) + "\n"
                 email_selectors = "input[name='loginfmt'], input[type='email'], #i0116"
-                await page.wait_for_selector(email_selectors, timeout=10000)
+                await page.wait_for_selector(email_selectors, timeout=15000)
                 await page.fill(email_selectors, email)
                 
                 submit_btn = "input[type='submit'], #idSIButton9, button[type='submit']"
                 await page.click(submit_btn)
+                await asyncio.sleep(1.5)
 
-                # Step 2: Handle Password / Use your password
+                yield json.dumps({"type": "status", "msg": "Checking Password Screen..."}) + "\n"
                 password_input_selector = "input[name='passwd'], input[type='password'], #i0118"
                 pwd_field = page.locator(password_input_selector).first
-
-                # Fast check loop like their code
-                for _ in range(6):
+                
+                # Check password field logic matching PyQt process_login[cite: 3]
+                for _ in range(8):
                     if await pwd_field.is_visible():
                         break
                     try:
                         pwd_link = page.get_by_text("Use your password", exact=False).first
                         if await pwd_link.is_visible():
                             await pwd_link.click()
+                            await asyncio.sleep(1)
                             break
                         
                         fallback = page.locator("#idA_PWD, [id*='PWD'], a:has-text('password')").first
                         if await fallback.is_visible():
                             await fallback.click()
+                            await asyncio.sleep(1)
                             break
                     except Exception:
                         pass
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.4)
 
-                yield json.dumps({"type": "status", "msg": "🔑 Submitting Password..."}) + "\n"
+                yield json.dumps({"type": "status", "msg": "Submitting Password..."}) + "\n"
                 await page.wait_for_selector(password_input_selector, timeout=10000)
                 await page.fill(password_input_selector, password)
                 await page.click(submit_btn)
                 
-                yield json.dumps({"type": "status", "msg": "🔍 Validating Account Status..."}) + "\n"
-                await asyncio.sleep(1)
+                yield json.dumps({"type": "status", "msg": "Verifying Credentials..."}) + "\n"
+                await asyncio.sleep(2.5)
 
-                # Direct Selector based validation (Ultra Fast)
-                error_selectors = ["#usernameError", "#passwordError", "#error", ".error", "[role='alert']", "#i0118Error"]
-                for selector in error_selectors:
-                    try:
-                        err_elem = page.locator(selector).first
-                        if await err_elem.is_visible(timeout=500):
-                            err_text = (await err_elem.inner_text()).lower()
-                            if "password" in err_text or "incorrect" in err_text:
-                                await browser.close()
-                                yield json.dumps({"type": "error", "error": "❌ Error: Password is Incorrect!"}) + "\n"
-                                return
-                            elif "locked" in err_text or "protect" in err_text or "verify" in err_text:
-                                await browser.close()
-                                yield json.dumps({"type": "error", "error": "⚠️ Error: Account Locked or Verification Required!"}) + "\n"
-                                return
-                    except Exception:
-                        pass
-
-                current_url = page.url
-                if "Abuse" in current_url or "proof/remember" in current_url or "recover" in current_url:
+                # Error Checks matching PyQt process_login[cite: 3]
+                body_text = (await page.locator("body").first.inner_text()).lower()
+                
+                if "password sign-in isn't available" in body_text or "isn't available. try another method" in body_text:
                     await browser.close()
-                    yield json.dumps({"type": "error", "error": "⚠️ Error: IP Blocked / Account Locked / Verification Required!"}) + "\n"
+                    yield json.dumps({"type": "error", "error": "⚠️ Error: Password sign-in isn't available. Please use VPN!"}) + "\n"
                     return
 
-                # Skip stay signed in prompts quickly
-                skip_selectors = ['#iCancel', '#acceptButton', '#idSIButton9', 'button:has-text("Yes")', 'button:has-text("No")']
-                for selector in skip_selectors:
-                    try:
-                        btn = page.locator(selector).first
-                        if await btn.is_visible(timeout=500):
-                            await btn.click()
-                    except Exception:
-                        pass
+                if "password is incorrect" in body_text or "your account or password is incorrect" in body_text or "incorrect for your microsoft account" in body_text:
+                    await browser.close()
+                    yield json.dumps({"type": "error", "error": "❌ Error: Password is Incorrect!"}) + "\n"
+                    return
 
-                # Optimization 2: Use wait_until="commit" (Key secret from their code)
-                yield json.dumps({"type": "status", "msg": "🚀 Redirecting to Inbox..."}) + "\n"
+                if "account has been locked" in body_text or "help us protect your account" in body_text or "verify your identity" in body_text or "unusual activity" in body_text:
+                    await browser.close()
+                    yield json.dumps({"type": "error", "error": "⚠️ Error: Account Locked or Verification Needed!"}) + "\n"
+                    return
+
+                # Redirect to Inbox with commit option as in PyQt code[cite: 3]
+                yield json.dumps({"type": "status", "msg": "Redirecting to Inbox..."}) + "\n"
                 try:
-                    await page.goto("https://outlook.live.com/mail/0/inbox", wait_until="commit", timeout=15000)
+                    await page.goto(TARGET_URL, wait_until="commit", timeout=20000)
                 except Exception:
                     pass
 
-                await inject_clean_css(page)
-                yield json.dumps({"type": "status", "msg": "🟢 Live Sync Active!"}) + "\n"
+                yield json.dumps({"type": "status", "msg": "Optimizing View..."}) + "\n"
+                await clean_outlook_interface(page)
+                
+                yield json.dumps({"type": "status", "msg": "Inbox Loaded Successfully!"}) + "\n"
 
-                # Optimization 3: Fast Live Stream Loop
+                # ------------------- LIVE STREAMING & OTP SCANNING -------------------[cite: 3]
+                last_fb_otp, last_fb_link = "None", "No Link"
+                last_li_otp, last_li_link = "None", "No Link"
+                otp_counter = 0
+
                 while True:
+                    # Capture screenshot matching quality 60 in PyQt code[cite: 3]
                     screenshot_base64 = ""
                     try:
-                        # Quality set to 60 for super-fast compression
-                        img_bytes = await page.screenshot(type='jpeg', quality=60)
-                        screenshot_base64 = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+                        screenshot_bytes = await page.screenshot(type='jpeg', quality=60)
+                        screenshot_base64 = f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode('utf-8')}"
                     except Exception:
                         pass
 
-                    email_list = []
-                    otps = {
-                        "linkedin": {"code": None, "link": None},
-                        "facebook": {"code": None, "link": None},
-                        "instagram": {"code": None, "link": None}
-                    }
+                    # Periodic OTP Scan (matching scan_for_otps logic)[cite: 3]
+                    otp_counter += 1
+                    if otp_counter >= 5:
+                        otp_counter = 0
+                        try:
+                            mail_items = page.locator("[role='option'], [data-convid], div[aria-label*='Notification']")
+                            count = await mail_items.count()
 
-                    # Mail extraction selector (from their code)
-                    mail_items = page.locator("[role='option'], [data-convid], div[aria-label*='Notification'], div[role='listitem']")
-                    try:
-                        count = await mail_items.count()
-                        for i in range(min(count, 10)):
-                            item = mail_items.nth(i)
-                            if await item.is_visible():
-                                text = await item.inner_text()
-                                html_content = await item.inner_html()
-                                
-                                if not text.strip():
-                                    continue
+                            fb_otp, fb_link = "None", "No Link"
+                            li_otp, li_link = "None", "No Link"
 
-                                lines = [line.strip() for line in text.split('\n') if line.strip()]
-                                sender = lines[0] if len(lines) > 0 else "Outlook Mail"
-                                subject = lines[1] if len(lines) > 1 else "No Subject"
-                                preview = " ".join(lines[2:]) if len(lines) > 2 else text
+                            if count > 0:
+                                for i in range(min(count, 5)):
+                                    item = mail_items.nth(i)
+                                    if await item.is_visible():
+                                        item_text = await item.inner_text()
+                                        item_html = await item.inner_html()
+                                        
+                                        # FACEBOOK SCAN[cite: 3]
+                                        if fb_otp == "None" and ("facebook" in item_text.lower() or "fb" in item_text.lower()):
+                                            fb_matches = re.findall(r'\b\d{4,8}\b', item_text)
+                                            if fb_matches:
+                                                fb_otp = fb_matches[0]
+                                            
+                                            links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                            fb_urls = [u for u in links if 'facebook.com' in u or 'fb.me' in u or 'fb' in u]
+                                            if fb_urls:
+                                                fb_link = fb_urls[0]
+                                            else:
+                                                link_elem = item.locator("a[href]")
+                                                if await link_elem.count() > 0:
+                                                    fb_link = await link_elem.first.get_attribute("href") or "No Link"
 
-                                email_list.append({
-                                    "sender": sender,
-                                    "subject": subject,
-                                    "preview": preview,
-                                    "date": "Recently"
-                                })
+                                        # LINKEDIN SCAN[cite: 3]
+                                        if li_otp == "None" and ("linkedin" in item_text.lower() or "pin" in item_text.lower()):
+                                            li_matches = re.findall(r'\b\d{6}\b', item_text)
+                                            if li_matches:
+                                                li_otp = li_matches[0]
 
-                                lower_content = text.lower()
-                                code, link = extract_otp_and_link(text, html_content)
+                                            links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                            li_urls = [u for u in links if 'linkedin.com' in u or 'lnkd.in' in u]
+                                            if li_urls:
+                                                li_link = li_urls[0]
+                                            else:
+                                                link_elem = item.locator("a[href]")
+                                                if await link_elem.count() > 0:
+                                                    li_link = await link_elem.first.get_attribute("href") or "No Link"
 
-                                if ("linkedin" in lower_content or "linkedin" in sender.lower()) and not otps["linkedin"]["code"]:
-                                    otps["linkedin"]["code"] = code
-                                    otps["linkedin"]["link"] = link
-                                elif ("facebook" in lower_content or "fb" in lower_content or "facebook" in sender.lower()) and not otps["facebook"]["code"]:
-                                    otps["facebook"]["code"] = code
-                                    otps["facebook"]["link"] = link
-                                elif ("instagram" in lower_content or "instagram" in sender.lower()) and not otps["instagram"]["code"]:
-                                    otps["instagram"]["code"] = code
-                                    otps["instagram"]["link"] = link
-                    except Exception:
-                        pass
+                                    if fb_otp != "None" and li_otp != "None":
+                                        break
 
-                    # Instant result emit
+                            last_fb_otp, last_fb_link = fb_otp, fb_link
+                            last_li_otp, last_li_link = li_otp, li_link
+
+                        except Exception:
+                            pass
+
+                    # Stream data back to Frontend
                     yield json.dumps({
                         "type": "result",
-                        "success": True, 
-                        "otps": otps, 
-                        "emails": email_list,
+                        "success": True,
+                        "otps": {
+                            "facebook": {"code": last_fb_otp, "link": last_fb_link},
+                            "linkedin": {"code": last_li_otp, "link": last_li_link}
+                        },
                         "screenshot": screenshot_base64
                     }) + "\n"
 
-                    # 1.5 seconds fast update delay
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(0.4)  # 0.4s interval as in PyQt code[cite: 3]
 
             except Exception as e:
                 try:
                     await browser.close()
                 except Exception:
                     pass
-                yield json.dumps({"type": "error", "error": f"Error: {str(e)}"}) + "\n"
+                
+                err = str(e).lower()
+                if "timeout" in err:
+                    yield json.dumps({"type": "error", "error": "❌ Error: Network Timeout / Slow Internet!"}) + "\n"
+                else:
+                    yield json.dumps({"type": "error", "error": f"❌ Error: Login Failed! ({str(e)})"}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
