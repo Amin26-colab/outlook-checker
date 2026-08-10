@@ -14,7 +14,6 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Target URL & Viewport defined as in PyQt code
 TARGET_URL = "https://outlook.live.com/mail/0/inbox"
 VIEWPORT = {"width": 330, "height": 550}
 
@@ -23,7 +22,7 @@ async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 async def clean_outlook_interface(page):
-    """CSS injection matching PyQt code's clean_outlook_interface method"""
+    """CSS injection matching PyQt clean_outlook_interface method[cite: 3]"""
     try:
         custom_css = """
             #o365header, #HeaderPane, header, [role='region'][aria-label*='Header'] { display: none !important; }
@@ -53,7 +52,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
         async with async_playwright() as p:
             yield json.dumps({"type": "status", "msg": "Starting Browser..."}) + "\n"
             
-            # Browser argument setup as in PyQt code
             browser_args = [
                 "--disable-blink-features=AutomationControlled", 
                 "--no-sandbox",
@@ -61,20 +59,18 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             ]
             browser = await p.chromium.launch(headless=True, args=browser_args)
 
-            # Context setup as in init_browser_session
             context = await browser.new_context(
                 viewport=VIEWPORT,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
 
-            # Init script for navigator.webdriver
             await page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
             """)
 
             try:
-                # ------------------- PROCESS LOGIN (PyQt Flow) -------------------[cite: 3]
+                # ------------------- LOGIN FLOW (Matching PyQt) -------------------[cite: 3]
                 yield json.dumps({"type": "status", "msg": "Opening login page..."}) + "\n"
                 await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=30000)
 
@@ -91,7 +87,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 password_input_selector = "input[name='passwd'], input[type='password'], #i0118"
                 pwd_field = page.locator(password_input_selector).first
                 
-                # Check password field logic matching PyQt process_login[cite: 3]
                 for _ in range(8):
                     if await pwd_field.is_visible():
                         break
@@ -119,7 +114,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 yield json.dumps({"type": "status", "msg": "Verifying Credentials..."}) + "\n"
                 await asyncio.sleep(2.5)
 
-                # Error Checks matching PyQt process_login[cite: 3]
                 body_text = (await page.locator("body").first.inner_text()).lower()
                 
                 if "password sign-in isn't available" in body_text or "isn't available. try another method" in body_text:
@@ -137,7 +131,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     yield json.dumps({"type": "error", "error": "⚠️ Error: Account Locked or Verification Needed!"}) + "\n"
                     return
 
-                # Redirect to Inbox with commit option as in PyQt code[cite: 3]
+                # Redirecting to Inbox[cite: 3]
                 yield json.dumps({"type": "status", "msg": "Redirecting to Inbox..."}) + "\n"
                 try:
                     await page.goto(TARGET_URL, wait_until="commit", timeout=20000)
@@ -152,10 +146,10 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 # ------------------- LIVE STREAMING & OTP SCANNING -------------------[cite: 3]
                 last_fb_otp, last_fb_link = "None", "No Link"
                 last_li_otp, last_li_link = "None", "No Link"
+                last_ig_otp, last_ig_link = "None", "No Link"
                 otp_counter = 0
 
                 while True:
-                    # Capture screenshot matching quality 60 in PyQt code[cite: 3]
                     screenshot_base64 = ""
                     try:
                         screenshot_bytes = await page.screenshot(type='jpeg', quality=60)
@@ -163,7 +157,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                     except Exception:
                         pass
 
-                    # Periodic OTP Scan (matching scan_for_otps logic)[cite: 3]
                     otp_counter += 1
                     if otp_counter >= 5:
                         otp_counter = 0
@@ -173,6 +166,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
 
                             fb_otp, fb_link = "None", "No Link"
                             li_otp, li_link = "None", "No Link"
+                            ig_otp, ig_link = "None", "No Link"
 
                             if count > 0:
                                 for i in range(min(count, 5)):
@@ -180,9 +174,10 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                                     if await item.is_visible():
                                         item_text = await item.inner_text()
                                         item_html = await item.inner_html()
+                                        lower_text = item_text.lower()
                                         
                                         # FACEBOOK SCAN[cite: 3]
-                                        if fb_otp == "None" and ("facebook" in item_text.lower() or "fb" in item_text.lower()):
+                                        if fb_otp == "None" and ("facebook" in lower_text or "fb" in lower_text):
                                             fb_matches = re.findall(r'\b\d{4,8}\b', item_text)
                                             if fb_matches:
                                                 fb_otp = fb_matches[0]
@@ -197,7 +192,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                                                     fb_link = await link_elem.first.get_attribute("href") or "No Link"
 
                                         # LINKEDIN SCAN[cite: 3]
-                                        if li_otp == "None" and ("linkedin" in item_text.lower() or "pin" in item_text.lower()):
+                                        if li_otp == "None" and ("linkedin" in lower_text or "pin" in lower_text):
                                             li_matches = re.findall(r'\b\d{6}\b', item_text)
                                             if li_matches:
                                                 li_otp = li_matches[0]
@@ -211,27 +206,37 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                                                 if await link_elem.count() > 0:
                                                     li_link = await link_elem.first.get_attribute("href") or "No Link"
 
-                                    if fb_otp != "None" and li_otp != "None":
-                                        break
+                                        # INSTAGRAM SCAN
+                                        if ig_otp == "None" and ("instagram" in lower_text or "ig" in lower_text):
+                                            ig_matches = re.findall(r'\b\d{6}\b', item_text)
+                                            if ig_matches:
+                                                ig_otp = ig_matches[0]
+
+                                            links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                            ig_urls = [u for u in links if 'instagram.com' in u]
+                                            if ig_urls:
+                                                ig_link = ig_urls[0]
 
                             last_fb_otp, last_fb_link = fb_otp, fb_link
                             last_li_otp, last_li_link = li_otp, li_link
+                            last_ig_otp, last_ig_link = ig_otp, ig_link
 
                         except Exception:
                             pass
 
-                    # Stream data back to Frontend
+                    # 🟢 FIXED DATA STRUCTURE FOR FRONTEND (Includes instagram)
                     yield json.dumps({
                         "type": "result",
                         "success": True,
                         "otps": {
                             "facebook": {"code": last_fb_otp, "link": last_fb_link},
-                            "linkedin": {"code": last_li_otp, "link": last_li_link}
+                            "linkedin": {"code": last_li_otp, "link": last_li_link},
+                            "instagram": {"code": last_ig_otp, "link": last_ig_link}
                         },
                         "screenshot": screenshot_base64
                     }) + "\n"
 
-                    await asyncio.sleep(0.4)  # 0.4s interval as in PyQt code[cite: 3]
+                    await asyncio.sleep(0.4)
 
             except Exception as e:
                 try:
