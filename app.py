@@ -1,7 +1,6 @@
 import os
 import asyncio
 import re
-import base64
 import json
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -14,15 +13,13 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 TARGET_URL = "https://outlook.live.com/mail/0/inbox"
-VIEWPORT = {"width": 330, "height": 550}
+VIEWPORT = {"width": 1280, "height": 720}
 
-# Global Pre-warmed Browser Instances
 GLOBAL_PLAYWRIGHT = None
 GLOBAL_BROWSER = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # App Start: Background Browser Pre-launching
     global GLOBAL_PLAYWRIGHT, GLOBAL_BROWSER
     GLOBAL_PLAYWRIGHT = await async_playwright().start()
     browser_args = [
@@ -32,7 +29,6 @@ async def lifespan(app: FastAPI):
     ]
     GLOBAL_BROWSER = await GLOBAL_PLAYWRIGHT.chromium.launch(headless=True, args=browser_args)
     yield
-    # App Shutdown
     if GLOBAL_BROWSER:
         await GLOBAL_BROWSER.close()
     if GLOBAL_PLAYWRIGHT:
@@ -43,26 +39,6 @@ app = FastAPI(lifespan=lifespan)
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
-
-async def clean_outlook_interface(page):
-    try:
-        custom_css = """
-            #o365header, #HeaderPane, header, [role='region'][aria-label*='Header'] { display: none !important; }
-            #LeftRail, [data-app-section='LeftRail'], div[role='navigation'] { display: none !important; }
-            #ribbonRoot, [role='menubar'], [aria-label*='Ribbon'], [data-app-section='CommandBar'] { display: none !important; }
-            #adUnit, [aria-label*='Advertisement'] { display: none !important; }
-            body, #root, #mainFolderList, div[role='main'] {
-                height: 100vh !important;
-                max-height: 100vh !important;
-                width: 100vw !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                overflow: auto !important;
-            }
-        """
-        await page.add_style_tag(content=custom_css)
-    except Exception:
-        pass
 
 @app.post("/fetch-inbox")
 async def fetch_inbox(email: str = Form(""), password: str = Form("")):
@@ -76,7 +52,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             yield json.dumps({"type": "error", "error": "Browser Engine initialize হয়নি।"}) + "\n"
             return
 
-        # Pre-warmed Browser Context Creation
         context = await GLOBAL_BROWSER.new_context(
             viewport=VIEWPORT,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
@@ -92,7 +67,7 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             yield json.dumps({"type": "status", "msg": "Opening login page..."}) + "\n"
             await page.goto("https://login.live.com/", wait_until="domcontentloaded", timeout=25000)
 
-            # Step 2: Email Submission
+            # Step 2: Submit Email
             yield json.dumps({"type": "status", "msg": "Submitting Email..."}) + "\n"
             email_selectors = "input[name='loginfmt'], input[type='email'], #i0116"
             await page.wait_for_selector(email_selectors, timeout=12000)
@@ -134,7 +109,6 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
             yield json.dumps({"type": "status", "msg": "Verifying Credentials..."}) + "\n"
             await asyncio.sleep(2)
 
-            # Credential Validation
             body_text = (await page.locator("body").first.inner_text()).lower()
             
             if "password sign-in isn't available" in body_text or "isn't available. try another method" in body_text:
@@ -152,113 +126,107 @@ async def fetch_inbox(email: str = Form(""), password: str = Form("")):
                 yield json.dumps({"type": "error", "error": "⚠️ Error: Account Locked or Verification Needed!"}) + "\n"
                 return
 
-            # Fast Inbox Redirect
+            # Redirecting to Inbox
             yield json.dumps({"type": "status", "msg": "Redirecting to Inbox..."}) + "\n"
             try:
-                await page.goto(TARGET_URL, wait_until="commit", timeout=15000)
+                await page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=20000)
             except Exception:
                 pass
 
-            yield json.dumps({"type": "status", "msg": "Optimizing View..."}) + "\n"
-            await clean_outlook_interface(page)
-            
             yield json.dumps({"type": "status", "msg": "Inbox Loaded Successfully!"}) + "\n"
 
-            # ------------------- STREAMING LOOP -------------------
+            # ------------------- LIVE INBOX PARSER & STREAMING -------------------
             last_fb_otp, last_fb_link = "None", "No Link"
             last_li_otp, last_li_link = "None", "No Link"
             last_ig_otp, last_ig_link = "None", "No Link"
-            otp_counter = 0
 
             while True:
-                screenshot_base64 = ""
+                parsed_emails = []
                 try:
-                    screenshot_bytes = await page.screenshot(type='jpeg', quality=60)
-                    screenshot_base64 = f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode('utf-8')}"
+                    # Outlook message list selector
+                    mail_items = page.locator("[role='option'], [data-convid], div[aria-label*='Notification']")
+                    count = await mail_items.count()
+
+                    fb_otp, fb_link = "None", "No Link"
+                    li_otp, li_link = "None", "No Link"
+                    ig_otp, ig_link = "None", "No Link"
+
+                    if count > 0:
+                        for i in range(min(count, 15)):
+                            item = mail_items.nth(i)
+                            if await item.is_visible():
+                                item_text = await item.inner_text()
+                                item_html = await item.inner_html()
+                                lower_text = item_text.lower()
+
+                                # Extract lines for display in the table/list UI
+                                lines = [line.strip() for line in item_text.split("\n") if line.strip()]
+                                sender = lines[0] if len(lines) > 0 else "Unknown Sender"
+                                subject = lines[1] if len(lines) > 1 else "No Subject"
+                                snippet = " ".join(lines[2:]) if len(lines) > 2 else ""
+
+                                parsed_emails.append({
+                                    "id": i,
+                                    "sender": sender,
+                                    "subject": subject,
+                                    "snippet": snippet,
+                                    "full_text": item_text
+                                })
+                                
+                                # FACEBOOK SCAN
+                                if fb_otp == "None" and ("facebook" in lower_text or "fb" in lower_text):
+                                    fb_matches = re.findall(r'\b\d{4,8}\b', item_text)
+                                    if fb_matches:
+                                        fb_otp = fb_matches[0]
+                                    
+                                    links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                    fb_urls = [u for u in links if 'facebook.com' in u or 'fb.me' in u or 'fb' in u]
+                                    if fb_urls:
+                                        fb_link = fb_urls[0]
+
+                                # LINKEDIN SCAN
+                                if li_otp == "None" and ("linkedin" in lower_text or "pin" in lower_text):
+                                    li_matches = re.findall(r'\b\d{6}\b', item_text)
+                                    if li_matches:
+                                        li_otp = li_matches[0]
+
+                                    links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                    li_urls = [u for u in links if 'linkedin.com' in u or 'lnkd.in' in u]
+                                    if li_urls:
+                                        li_link = li_urls[0]
+
+                                # INSTAGRAM SCAN
+                                if ig_otp == "None" and ("instagram" in lower_text or "ig" in lower_text):
+                                    ig_matches = re.findall(r'\b\d{6}\b', item_text)
+                                    if ig_matches:
+                                        ig_otp = ig_matches[0]
+
+                                    links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
+                                    ig_urls = [u for u in links if 'instagram.com' in u]
+                                    if ig_urls:
+                                        ig_link = ig_urls[0]
+
+                    last_fb_otp, last_fb_link = fb_otp, fb_link
+                    last_li_otp, last_li_link = li_otp, li_link
+                    last_ig_otp, last_ig_link = ig_otp, ig_link
+
                 except Exception:
                     pass
 
-                otp_counter += 1
-                if otp_counter >= 5:
-                    otp_counter = 0
-                    try:
-                        mail_items = page.locator("[role='option'], [data-convid], div[aria-label*='Notification']")
-                        count = await mail_items.count()
-
-                        fb_otp, fb_link = "None", "No Link"
-                        li_otp, li_link = "None", "No Link"
-                        ig_otp, ig_link = "None", "No Link"
-
-                        if count > 0:
-                            for i in range(min(count, 5)):
-                                item = mail_items.nth(i)
-                                if await item.is_visible():
-                                    item_text = await item.inner_text()
-                                    item_html = await item.inner_html()
-                                    lower_text = item_text.lower()
-                                    
-                                    # FACEBOOK
-                                    if fb_otp == "None" and ("facebook" in lower_text or "fb" in lower_text):
-                                        fb_matches = re.findall(r'\b\d{4,8}\b', item_text)
-                                        if fb_matches:
-                                            fb_otp = fb_matches[0]
-                                        
-                                        links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
-                                        fb_urls = [u for u in links if 'facebook.com' in u or 'fb.me' in u or 'fb' in u]
-                                        if fb_urls:
-                                            fb_link = fb_urls[0]
-                                        else:
-                                            link_elem = item.locator("a[href]")
-                                            if await link_elem.count() > 0:
-                                                fb_link = await link_elem.first.get_attribute("href") or "No Link"
-
-                                    # LINKEDIN
-                                    if li_otp == "None" and ("linkedin" in lower_text or "pin" in lower_text):
-                                        li_matches = re.findall(r'\b\d{6}\b', item_text)
-                                        if li_matches:
-                                            li_otp = li_matches[0]
-
-                                        links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
-                                        li_urls = [u for u in links if 'linkedin.com' in u or 'lnkd.in' in u]
-                                        if li_urls:
-                                            li_link = li_urls[0]
-                                        else:
-                                            link_elem = item.locator("a[href]")
-                                            if await link_elem.count() > 0:
-                                                li_link = await link_elem.first.get_attribute("href") or "No Link"
-
-                                    # INSTAGRAM
-                                    if ig_otp == "None" and ("instagram" in lower_text or "ig" in lower_text):
-                                        ig_matches = re.findall(r'\b\d{6}\b', item_text)
-                                        if ig_matches:
-                                            ig_otp = ig_matches[0]
-
-                                        links = re.findall(r'https?://[^\s>"]+', item_html + " " + item_text)
-                                        ig_urls = [u for u in links if 'instagram.com' in u]
-                                        if ig_urls:
-                                            ig_link = ig_urls[0]
-
-                        last_fb_otp, last_fb_link = fb_otp, fb_link
-                        last_li_otp, last_li_link = li_otp, li_link
-                        last_ig_otp, last_ig_link = ig_otp, ig_link
-
-                    except Exception:
-                        pass
-
-                # 🟢 FULL COMPATIBLE JSON STRUCTURE (Fixes JS 'length' & 'code' errors)
+                # Stream inbox JSON data directly to frontend UI
                 yield json.dumps({
                     "type": "result",
                     "success": True,
-                    "emails": [],  # Avoids undefined length error in frontend
+                    "emails": parsed_emails,
                     "otps": {
                         "facebook": {"code": last_fb_otp, "link": last_fb_link},
                         "linkedin": {"code": last_li_otp, "link": last_li_link},
                         "instagram": {"code": last_ig_otp, "link": last_ig_link}
                     },
-                    "screenshot": screenshot_base64
+                    "screenshot": ""
                 }) + "\n"
 
-                await asyncio.sleep(0.4)
+                await asyncio.sleep(1)
 
         except Exception as e:
             try:
