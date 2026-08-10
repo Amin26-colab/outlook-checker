@@ -10,12 +10,22 @@
         .main-card { background: #151e32; border: 1px solid #23304d; border-radius: 12px; width: 100%; max-width: 680px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         h2 { color: #38bdf8; text-align: center; margin-top: 0; margin-bottom: 20px; font-weight: 600; font-size: 22px; }
         
-        .form-group { margin-bottom: 15px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media (max-width: 580px) { .form-grid { grid-template-columns: 1fr; } }
+
+        .form-group { margin-bottom: 12px; }
         label { font-size: 13px; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500; }
         input[type="text"], input[type="password"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #283654; border-radius: 8px; font-size: 14px; color: #ffffff; outline: none; transition: 0.2s; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
         
-        .btn-group { display: flex; gap: 10px; margin-top: 5px; }
+        /* Live Status Box */
+        .status-box { background: #0f172a; border: 1px solid #283654; border-radius: 8px; padding: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+        .status-title { font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .status-text { font-size: 12px; color: #e2e8f0; line-height: 1.4; word-break: break-word; min-height: 36px; }
+        .status-dot { width: 8px; height: 8px; background-color: #22c55e; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
         button { flex: 1; background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { background: #0369a1; }
         button:disabled { background: #334155; cursor: not-allowed; opacity: 0.7; }
@@ -68,14 +78,27 @@
     <h2>Socialverse-Ready Inbox</h2>
     
     <form id="checkerForm">
-        <div class="form-group">
-            <label>Email Address</label>
-            <input type="text" id="email" name="email" placeholder="example@outlook.com" required>
+        <div class="form-grid">
+            <div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="text" id="email" name="email" placeholder="example@outlook.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" required>
+                </div>
+            </div>
+            
+            <!-- Live Bot Status Display Box -->
+            <div class="status-box">
+                <div class="status-title">
+                    <span class="status-dot"></span> Realtime Bot Status
+                </div>
+                <div class="status-text" id="statusText">Idle / Waiting for action...</div>
+            </div>
         </div>
-        <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="password" name="password" placeholder="••••••••" required>
-        </div>
+
         <div class="btn-group">
             <button type="submit" id="submitBtn">Start Login & Fetch Inbox</button>
             <button type="button" id="resetBtn" class="reset-btn" onclick="clearForm()">Reset</button>
@@ -148,6 +171,7 @@
         const inboxList = document.getElementById("inboxList");
         const screenshotWrapper = document.getElementById("screenshotWrapper");
         const liveScreenshot = document.getElementById("liveScreenshot");
+        const statusText = document.getElementById("statusText");
 
         submitBtn.disabled = true;
         submitBtn.innerText = "Processing...";
@@ -155,66 +179,89 @@
         inboxWrapper.style.display = "none";
         screenshotWrapper.style.display = "none";
         inboxList.innerHTML = "";
+        statusText.innerText = "Initializing bot process...";
 
         const formData = new FormData(e.target);
 
         try {
             const response = await fetch("/fetch-inbox", { method: "POST", body: formData });
-            const responseText = await response.text();
-            
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (jsonErr) {
-                throw new Error("সার্ভার থেকে সঠিক ডাটা পাওয়া যায়নি।");
-            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
 
-            // Screen capture display handler
-            if (data.screenshot) {
-                liveScreenshot.src = data.screenshot;
-                screenshotWrapper.style.display = "block";
-            }
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop(); // Keep incomplete line in buffer
 
-            if (response.ok && data.success) {
-                ['linkedin', 'facebook', 'instagram'].forEach(platform => {
-                    const otpData = data.otps[platform];
-                    const otpElem = document.getElementById(`${platform}Otp`);
-                    const linkElem = document.getElementById(`${platform}Link`);
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const item = JSON.parse(line);
+                        
+                        if (item.type === "status") {
+                            statusText.innerText = item.msg;
+                        } else if (item.type === "error") {
+                            statusText.innerText = "Process Stopped with Error.";
+                            throw new Error(item.error);
+                        } else if (item.type === "result") {
+                            if (item.screenshot) {
+                                liveScreenshot.src = item.screenshot;
+                                screenshotWrapper.style.display = "block";
+                            }
 
-                    otpElem.innerText = otpData.code || "None";
-                    if (otpData.link) {
-                        linkElem.innerText = "Open Link";
-                        linkElem.setAttribute("data-link", otpData.link);
-                    } else {
-                        linkElem.innerText = "No Link";
-                        linkElem.removeAttribute("data-link");
+                            if (item.success) {
+                                ['linkedin', 'facebook', 'instagram'].forEach(platform => {
+                                    const otpData = item.otps[platform];
+                                    const otpElem = document.getElementById(`${platform}Otp`);
+                                    const linkElem = document.getElementById(`${platform}Link`);
+
+                                    otpElem.innerText = otpData.code || "None";
+                                    if (otpData.link) {
+                                        linkElem.innerText = "Open Link";
+                                        linkElem.setAttribute("data-link", otpData.link);
+                                    } else {
+                                        linkElem.innerText = "No Link";
+                                        linkElem.removeAttribute("data-link");
+                                    }
+                                });
+
+                                document.getElementById("mailCount").innerText = `Total: ${item.emails.length}`;
+                                item.emails.forEach(email => {
+                                    const card = document.createElement("div");
+                                    card.className = "email-card";
+                                    card.innerHTML = `
+                                        <div class="email-subject">${escapeHtml(email.subject)}</div>
+                                        <div class="email-sender">${escapeHtml(email.sender)} • <span style="font-size:11px; color:#64748b;">${escapeHtml(email.date)}</span></div>
+                                        <div class="email-preview">${escapeHtml(email.preview)}</div>
+                                    `;
+                                    card.addEventListener("click", () => {
+                                        document.getElementById("mSubject").innerText = email.subject;
+                                        document.getElementById("mSender").innerText = `From: ${email.sender} (${email.date})`;
+                                        document.getElementById("mBody").innerText = email.preview;
+                                        document.getElementById("mailModal").style.display = "flex";
+                                    });
+                                    inboxList.appendChild(card);
+                                });
+                                inboxWrapper.style.display = "block";
+                            } else {
+                                throw new Error(item.error || "ইনবক্স লোড করতে ব্যর্থ হয়েছে।");
+                            }
+                        }
+                    } catch (parseErr) {
+                        if (parseErr.message && !parseErr.message.includes("JSON")) {
+                            throw parseErr;
+                        }
                     }
-                });
-
-                document.getElementById("mailCount").innerText = `Total: ${data.emails.length}`;
-                data.emails.forEach(email => {
-                    const card = document.createElement("div");
-                    card.className = "email-card";
-                    card.innerHTML = `
-                        <div class="email-subject">${escapeHtml(email.subject)}</div>
-                        <div class="email-sender">${escapeHtml(email.sender)} • <span style="font-size:11px; color:#64748b;">${escapeHtml(email.date)}</span></div>
-                        <div class="email-preview">${escapeHtml(email.preview)}</div>
-                    `;
-                    card.addEventListener("click", () => {
-                        document.getElementById("mSubject").innerText = email.subject;
-                        document.getElementById("mSender").innerText = `From: ${email.sender} (${email.date})`;
-                        document.getElementById("mBody").innerText = email.preview;
-                        document.getElementById("mailModal").style.display = "flex";
-                    });
-                    inboxList.appendChild(card);
-                });
-                inboxWrapper.style.display = "block";
-            } else {
-                throw new Error(data.error || "ইনবক্স লোড করতে ব্যর্থ হয়েছে।");
+                }
             }
         } catch (err) {
             errorMessage.innerText = err.message;
             errorMessage.style.display = "block";
+            statusText.innerText = "Error Occurred.";
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = "Start Login & Fetch Inbox";
@@ -227,6 +274,7 @@
         document.getElementById("errorMessage").style.display = "none";
         document.getElementById("inboxWrapper").style.display = "none";
         document.getElementById("screenshotWrapper").style.display = "none";
+        document.getElementById("statusText").innerText = "Idle / Waiting for action...";
         ['linkedin', 'facebook', 'instagram'].forEach(platform => {
             document.getElementById(`${platform}Otp`).innerText = "None";
             document.getElementById(`${platform}Link`).innerText = "No Link";
