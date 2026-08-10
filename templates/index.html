@@ -33,6 +33,12 @@
         /* Error Box */
         .error-message { color: #f87171; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center; font-size: 13px; display: none; }
 
+        /* Live Screenshot Section */
+        .screenshot-wrapper { margin-top: 20px; display: none; text-align: center; }
+        .screenshot-header { font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .screenshot-container { border: 1px solid #283654; border-radius: 8px; overflow: hidden; background: #0f172a; max-height: 250px; }
+        .screenshot-container img { width: 100%; height: auto; display: block; object-fit: cover; }
+
         /* Inbox List Container */
         .inbox-wrapper { margin-top: 25px; display: none; }
         .inbox-header { font-size: 15px; font-weight: 600; color: #e2e8f0; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
@@ -97,6 +103,16 @@
 
     <div id="errorMessage" class="error-message"></div>
 
+    <!-- Live Browser View Section -->
+    <div id="screenshotWrapper" class="screenshot-wrapper">
+        <div class="screenshot-header">
+            <span>📷 Live Browser View</span>
+        </div>
+        <div class="screenshot-container">
+            <img id="liveScreenshot" src="" alt="Live Browser View">
+        </div>
+    </div>
+
     <!-- Inbox List -->
     <div id="inboxWrapper" class="inbox-wrapper">
         <div class="inbox-header">
@@ -130,11 +146,14 @@
         const errorMessage = document.getElementById("errorMessage");
         const inboxWrapper = document.getElementById("inboxWrapper");
         const inboxList = document.getElementById("inboxList");
+        const screenshotWrapper = document.getElementById("screenshotWrapper");
+        const liveScreenshot = document.getElementById("liveScreenshot");
 
         submitBtn.disabled = true;
         submitBtn.innerText = "Processing...";
         errorMessage.style.display = "none";
         inboxWrapper.style.display = "none";
+        screenshotWrapper.style.display = "none";
         inboxList.innerHTML = "";
 
         const formData = new FormData(e.target);
@@ -147,7 +166,13 @@
             try {
                 data = JSON.parse(responseText);
             } catch (jsonErr) {
-                throw new Error("সার্ভার থেকে সঠিক ডাটা পাওয়া যায়নি।");
+                throw new Error("সার্ভার থেকে সঠিক ডাটা পাওয়া যায়নি।");
+            }
+
+            // Screen capture display handler
+            if (data.screenshot) {
+                liveScreenshot.src = data.screenshot;
+                screenshotWrapper.style.display = "block";
             }
 
             if (response.ok && data.success) {
@@ -201,6 +226,7 @@
         document.getElementById("password").value = "";
         document.getElementById("errorMessage").style.display = "none";
         document.getElementById("inboxWrapper").style.display = "none";
+        document.getElementById("screenshotWrapper").style.display = "none";
         ['linkedin', 'facebook', 'instagram'].forEach(platform => {
             document.getElementById(`${platform}Otp`).innerText = "None";
             document.getElementById(`${platform}Link`).innerText = "No Link";
